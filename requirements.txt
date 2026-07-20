@@ -1,0 +1,11 @@
+yt-dlp[default]
+opencv-python
+numpy
+faster-whisper
+customtkinter
+Pillow
+ffmpeg-python
+google-genai
+requests
+mediapipe
+python-dotenv

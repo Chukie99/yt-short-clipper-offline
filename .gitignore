@@ -1,0 +1,29 @@
+# Secrets
+.env
+config.json
+cookies.txt
+
+# Build artifacts
+dist/
+build/
+*.exe
+*.spec
+
+# Temp & output
+temp/
+temp_analyze/
+output/
+__pycache__/
+*.pyc
+*.pyo
+error.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Internal
+.mimocode/
+API openrouter.txt
