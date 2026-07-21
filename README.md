@@ -10,6 +10,7 @@ Ubah video YouTube panjang menjadi Shorts viral secara otomatis dengan AI, face 
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-required-green?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/badge/Release-v3.0-brightgreen)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chuckie999)
 
 </div>
 
@@ -156,6 +157,34 @@ yt-short-clipper-offline/
 - Multiple templates
 - B-Roll overlay
 - Split screen support
+
+---
+
+## 🤝 Contributing
+
+Kontribusi sangat welcome! Cara berkontribusi:
+
+1. **Fork** repository ini
+2. Buat branch baru (`git checkout -b fitur/nama-fitur`)
+3. Commit perubahan (`git commit -m 'Tambah fitur XYZ'`)
+4. Push ke branch (`git push origin fitur/nama-fitur`)
+5. Buka **Pull Request**
+
+Atau langsung:
+- [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues)
+- [Request Feature](https://github.com/Chukie99/yt-short-clipper-offline/issues)
+
+---
+
+## 💖 Support
+
+Jika project ini bermanfaat untukmu, dukung pengembangan selanjutnya:
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Beli%20Kopi-FF5E5B?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/chuckie999)
+
+Donasi bisa juga lewat:
+- **Ko-fi**: [ko-fi.com/chuckie999](https://ko-fi.com/chuckie999)
+- **GitHub Sponsors**: [github.com/sponsors/Chukie99](https://github.com/sponsors/Chukie99)
 
 ---
 
