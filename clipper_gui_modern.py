@@ -1190,9 +1190,6 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             "-i", str(trimmed)
         ]
         filter_parts = []
-        # Delay original audio to sync with video (which starts after cover)
-        filter_parts.append(f"[1:a]adelay={delay_ms}|{delay_ms}[a_delayed]")
-        audio_map = "[a_delayed]"
 
         # Silence removal config (must be before audio filter block)
         silence_threshold = opts.get("silence_threshold", 0.6)
@@ -1200,6 +1197,19 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
         skip_silent = silence_threshold > 0
         if skip_silent and speech_segments:
             log_func(f"[{safe_id}] ✂️  Silence removal: {len(speech_segments)} speech segments (threshold: {silence_threshold}s)")
+
+        if skip_silent and speech_segments:
+            # Cut audio at the SAME speech segments used for video frame skipping
+            # aselect keeps only audio in speech regions, asetpts resets timestamps
+            select_parts = [f"between(t,{s:.3f},{e:.3f})" for s, e in speech_segments]
+            select_expr = "+".join(select_parts)
+            filter_parts.append(f"[1:a]aselect='{select_expr}',asetpts=N/SR/TB[a_trimmed]")
+            filter_parts.append(f"[a_trimmed]adelay={delay_ms}|{delay_ms}[a_delayed]")
+            log_func(f"[{safe_id}] 🔊 Audio trimmed to match video silence removal")
+        else:
+            # No silence removal - just delay audio to sync with cover
+            filter_parts.append(f"[1:a]adelay={delay_ms}|{delay_ms}[a_delayed]")
+        audio_map = "[a_delayed]"
 
         if use_hook:
             # Duck original audio during hook to avoid clash (from t=0)
@@ -1224,8 +1234,8 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                     # Add small padding to make ducking smoother
                     pad = 0.1
                     duck_parts.append(f"if(between(t,{max(0, s_start - pad)},{s_end + pad}),{duck_vol},{bv})")
-                # Chain the conditions with *
-                duck_expr = "*".join(duck_parts)
+                # OR: duck when in ANY speech segment
+                duck_expr = "+".join(duck_parts)
                 filter_parts.append(f"[{bgm_idx}:a]volume='{duck_expr}':eval=frame[bgm_vol]")
                 log_func(f"[{safe_id}] 🎵 Dynamic BGM ducking: {len(speech_segments)} speech segments")
             else:
