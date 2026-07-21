@@ -1229,14 +1229,14 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             duck_vol = 0.08  # BGM volume during speech
             if skip_silent and speech_segments:
                 # Dynamic ducking: lower BGM during speech segments
-                duck_parts = []
+                # between() returns 0 or 1, sum them to detect ANY active segment
+                between_parts = []
                 for s_start, s_end in speech_segments:
-                    # Add small padding to make ducking smoother
                     pad = 0.1
-                    duck_parts.append(f"if(between(t,{max(0, s_start - pad)},{s_end + pad}),{duck_vol},{bv})")
-                # OR: duck when in ANY speech segment
-                duck_expr = "+".join(duck_parts)
-                filter_parts.append(f"[{bgm_idx}:a]volume='{duck_expr}':eval=frame[bgm_vol]")
+                    between_parts.append(f"between(t,{max(0, s_start - pad):.3f},{s_end + pad:.3f})")
+                duck_expr = "+".join(between_parts)
+                # if(sum > 0, duck_vol, bv) - duck when in ANY speech segment
+                filter_parts.append(f"[{bgm_idx}:a]volume='if({duck_expr},{duck_vol},{bv})':eval=frame[bgm_vol]")
                 log_func(f"[{safe_id}] 🎵 Dynamic BGM ducking: {len(speech_segments)} speech segments")
             else:
                 filter_parts.append(f"[{bgm_idx}:a]volume={bv}[bgm_vol]")
