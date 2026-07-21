@@ -81,6 +81,20 @@ Untuk download video tanpa watermark:
 3. Klik extension → Export
 4. Simpan file `.txt` dan atur path di Settings
 
+### Voice Hook (Optional)
+
+Fitur Voice Hook memungkinkan menambahkan voice over pembuka secara otomatis menggunakan Voicebox local server.
+
+**Persiapan:**
+1. Install dan jalankan [Voicebox](https://github.com/Chukie99/voicebox) di port `17493` (default)
+2. Buat voice profile di Voicebox
+3. AI akan otomatis generate voice hook saat analisis, atau rekam manual sebagai MP3
+
+**Cara pakai:**
+- Saat AI analysis, field `voice_hook_script` akan generate audio otomatis (jika Voicebox running)
+- Atau klik folder di kolom "Voice Hook MP3" untuk upload MP3 rekaman manual
+- Atur durasi hook dengan slider (0.5 - 5 detik)
+
 ---
 
 ## 🎯 Cara Pakai

@@ -1,10 +1,24 @@
-import os, sys, subprocess, threading, time, json, traceback, re, requests
+import os, sys, subprocess, threading, time, json, traceback, re, requests, logging
 from dataclasses import dataclass
 from typing import List, Tuple
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ---------- Logging Setup ----------
+LOG_FILE = Path(__file__).parent / "error.log"
+logger = logging.getLogger("clipper")
+logger.setLevel(logging.DEBUG)
+_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+_fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+_fh.setLevel(logging.DEBUG)
+_fh.setFormatter(_fmt)
+_sh = logging.StreamHandler()
+_sh.setLevel(logging.WARNING)
+_sh.setFormatter(_fmt)
+logger.addHandler(_fh)
+logger.addHandler(_sh)
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -59,7 +73,7 @@ DEFAULT_CONFIG = {
     "gemini_api_key": "",
     "gemini_model": "gemini-2.0-flash",
     "openrouter_api_key": "",
-    "openrouter_model": "deepseek/deepseek-chat",
+    "openrouter_model": "nvidia/nemotron-3-super-120b-a12b:free",
     "groq_api_key": "",
     "groq_model": "llama-3.3-70b-versatile",
     "pexels_api_key": "",
@@ -75,6 +89,7 @@ DEFAULT_CONFIG = {
     "end_card_text": "Follow for more!",
     "whisper_provider": "Local (faster-whisper)",
     "whisper_model": "openai/whisper-1",
+    "silence_threshold": 0.6,
 }
 
 RENDER_PRESETS = {
@@ -228,15 +243,15 @@ def check_dependencies():
     if bundled_bin.exists() and str(bundled_bin) not in os.environ.get("PATH", ""):
         os.environ["PATH"] = str(bundled_bin) + os.pathsep + os.environ["PATH"]
     try: subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    except: errors.append("ffmpeg.exe tidak ditemukan di folder bin/")
+    except (FileNotFoundError, subprocess.CalledProcessError) as e: errors.append("ffmpeg.exe tidak ditemukan di folder bin/"); logger.debug("ffmpeg check: %s", e)
     try: subprocess.run(["yt-dlp", "--version"], capture_output=True, check=True)
-    except: errors.append("yt-dlp.exe tidak ditemukan di folder bin/")
+    except (FileNotFoundError, subprocess.CalledProcessError) as e: errors.append("yt-dlp.exe tidak ditemukan di folder bin/"); logger.debug("yt-dlp check: %s", e)
     try: from faster_whisper import WhisperModel
-    except: errors.append("faster-whisper tidak terinstall.")
+    except ImportError as e: errors.append("faster-whisper tidak terinstall."); logger.debug("faster-whisper import: %s", e)
     try: import cv2
-    except: errors.append("opencv-python tidak terinstall.")
+    except ImportError as e: errors.append("opencv-python tidak terinstall."); logger.debug("opencv import: %s", e)
     try: import numpy
-    except: errors.append("numpy tidak terinstall.")
+    except ImportError as e: errors.append("numpy tidak terinstall."); logger.debug("numpy import: %s", e)
     return errors
 
 def list_available_fonts():
@@ -309,8 +324,9 @@ def add_subtitle_animation(draw, text, font, x, y, fill, outline_w, frame_num, f
             anim_font = ImageFont.truetype(font.path, int(font.size * scale))
         else:
             anim_font = font
-    except:
+    except (OSError, IOError, ValueError) as e:
         anim_font = font
+        logger.debug("Subtitle font scale fallback: %s", e)
     if is_active:
         draw.text((x + 3, y + 3), text, font=anim_font, fill=(0, 0, 0, 200), stroke_width=outline_w, stroke_fill=(0, 0, 0, 200))
         draw.text((x, y), text, font=anim_font, fill=fill, stroke_width=outline_w, stroke_fill=(0, 0, 0, 255))
@@ -337,7 +353,9 @@ def run_cmd(cmd, log_func=None):
             if "sign in to confirm" in err_lower or "cookies" in err_lower:
                 raise Exception("❌ Cookies YouTube expired. Export ulang cookies.txt dari browser:\n   1. Buka YouTube.com, login\n   2. Install extension 'Get cookies.txt'\n   3. Klik extension → Export\n   4. Simpan ke file .txt yang sama di Settings")
             raise Exception(f"❌ Proses gagal (kode {process.returncode}). Detail:\n{full_out}")
-    except Exception as e: raise Exception(str(e)) from e
+    except Exception as e:
+        logger.error("run_cmd failed: %s", e)
+        raise Exception(str(e)) from e
 
 def safe_generate_content(config, contents, log_func=None):
     provider = config.get("ai_provider", "Gemini (Native)")
@@ -362,7 +380,7 @@ def safe_generate_content(config, contents, log_func=None):
                 resp.raise_for_status(); return resp.json()['choices'][0]['message']['content'].strip()
             else:
                 api_key = config.get("openrouter_api_key", "") or os.environ.get("OPENROUTER_API_KEY", "")
-                model = config.get("openrouter_model", "deepseek/deepseek-chat")
+                model = config.get("openrouter_model", "nvidia/nemotron-3-super-120b-a12b:free")
                 url = "https://openrouter.ai/api/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
                 payload = {"model": model, "messages": [{"role": "user", "content": contents}]}
@@ -370,6 +388,7 @@ def safe_generate_content(config, contents, log_func=None):
                 if resp.status_code == 429: raise Exception("429 RESOURCE_EXHAUSTED")
                 resp.raise_for_status(); return resp.json()['choices'][0]['message']['content'].strip()
         except Exception as e:
+            logger.warning("AI provider %s attempt %d failed: %s", provider, i + 1, e)
             if "429" in str(e) and log_func: log_func(f"[!] Quota Habis. Menunggu {retry_delay}s..."); time.sleep(retry_delay); retry_delay += 15
             else: raise e
     raise Exception(f"Gagal menghubungi {provider}.")
@@ -407,6 +426,10 @@ def ensure_bgm(mood, log_func, config=None):
             log_func(f"[⚠️] Pexels error: {str(e)}")
 
     # Fallback to YouTube search
+    # WARNING: YouTube search results labeled "no copyright" are NOT guaranteed royalty-free.
+    # Using a Pexels API key is strongly recommended for safe, licensed BGM.
+    log_func(f"[⚠️] PERINGATAN: BGM dari YouTube belum tentu bebas royalti. "
+             "Gunakan Pexels API key untuk BGM berlisensi aman, atau ganti BGM manual.")
     search_map = {
         "kocak": "Funny comedy background music no copyright",
         "tegang": "Suspense cinematic background music no copyright",
@@ -415,14 +438,14 @@ def ensure_bgm(mood, log_func, config=None):
         "santai": "Chill lofi background music no copyright"
     }
     query = search_map.get(mood.lower(), "Chill background music no copyright")
-    log_func(f"[🎵] Fallback: Mencari backsound di YouTube...")
+    log_func(f"[🎵] Fallback: Mencari backsound di YouTube (beresiko copyright claim!)...")
     ytdlp_path = "yt-dlp"; local_ytdlp = BASE_DIR / "bin" / "yt-dlp.exe"
     if local_ytdlp.exists(): ytdlp_path = f'"{str(local_ytdlp)}"'
     try:
         cmd = f'{ytdlp_path} --no-update --user-agent "{UA}" --match-filter "duration < 300" --extract-audio --audio-format mp3 --output "{bgm_path}" "ytsearch1:{query}"'
         subprocess.run(cmd, shell=True, capture_output=True, text=True)
         if bgm_path.exists():
-            log_func(f"[✅] Backsound {mood} berhasil di-download.")
+            log_func(f"[✅] Backsound {mood} berhasil di-download (⚠️ lisensi tidak dijamin).")
             return bgm_path
     except Exception as e:
         log_func(f"[⚠️] Fallback error: {str(e)}")
@@ -472,7 +495,67 @@ def time_str_to_seconds(t):
         if len(parts) == 3: return parts[0]*3600 + parts[1]*60 + parts[2]
         elif len(parts) == 2: return parts[0]*60 + parts[1]
         else: return parts[0]
-    except: return float(t)
+    except (ValueError, IndexError, TypeError) as e:
+        logger.debug("time_str_to_seconds fallback for '%s': %s", t, e)
+        return float(t)
+
+def compute_speech_segments(all_words, silence_threshold=0.6):
+    """Compute list of (start, end) time ranges where speech is active.
+    Merges consecutive words and splits at gaps > silence_threshold."""
+    if not all_words:
+        return []
+    segments = []
+    seg_start = all_words[0]["start"]
+    seg_end = all_words[0]["end"]
+    for w in all_words[1:]:
+        if w["start"] - seg_end > silence_threshold:
+            segments.append((seg_start, seg_end))
+            seg_start = w["start"]
+        seg_end = w["end"]
+    segments.append((seg_start, seg_end))
+    return segments
+
+def is_in_speech_segment(cur_time, speech_segments):
+    """Check if cur_time falls within any speech segment (with small padding)."""
+    if not speech_segments:
+        return True
+    PAD = 0.05
+    for s_start, s_end in speech_segments:
+        if s_start - PAD <= cur_time <= s_end + PAD:
+            return True
+    return False
+
+def detect_emphasis_words(all_words):
+    """Detect emphasis words: all caps, ending with !, or short punchy words."""
+    emphasis_indices = set()
+    emphasis_words = {"STOP", "NO", "YES", "WAIT", "REALLY", "LITERALLY",
+                      "INSANE", "CRAZY", "MIND", "BLOWING", "UNBELIEVABLE",
+                      "SHOCKING", "AMAZING", "INCREDIBLE", "NEVER", "ALWAYS",
+                      "BEST", "WORST", "ONLY", "EVER", "NOTHING", "EVERYTHING"}
+    for i, w in enumerate(all_words):
+        text = w["text"].strip()
+        if not text:
+            continue
+        # All caps word (>2 chars) or ends with !
+        if (text.isupper() and len(text) > 2) or text.endswith("!"):
+            emphasis_indices.add(i)
+        # Known emphasis words
+        elif text.upper() in emphasis_words:
+            emphasis_indices.add(i)
+    return emphasis_indices
+
+def detect_whisper_device():
+    """Auto-detect best device for faster-whisper: CUDA > CPU."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logger.info("GPU detected: %s — using CUDA for Whisper", torch.cuda.get_device_name(0))
+            return "cuda", "float16"
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug("GPU detection failed: %s", e)
+    return "cpu", "int8"
 
 def draw_pro_text(draw, text, pos, font, fill=(255, 255, 0), outline_color=(0, 0, 0), outline_width=12, shadow_offset=(5, 7), shadow_alpha=160):
     x, y = pos
@@ -599,8 +682,9 @@ def draw_karaoke_line(img_pil, draw, all_words, active_idx, font, target_w, targ
     active_scale = template.get("active_scale", 1.1)
     try:
         font_active = ImageFont.truetype(font.path, int(font.size * active_scale))
-    except:
+    except (OSError, IOError, ValueError) as e:
         font_active = font
+        logger.debug("Karaoke font scale fallback: %s", e)
     
     SPACING = 20
     
@@ -620,8 +704,9 @@ def draw_karaoke_line(img_pil, draw, all_words, active_idx, font, target_w, targ
                 bounce = 1.0 + 0.08 * (cycle_frame / (fps * 0.08))
                 try:
                     f = ImageFont.truetype(font.path, int(font.size * active_scale * bounce))
-                except:
+                except (OSError, IOError, ValueError) as e:
                     f = font_active
+                    logger.debug("Bounce font fallback: %s", e)
         
         bbox = draw.textbbox((0, 0), w_text, font=f)
         ww = bbox[2] - bbox[0]
@@ -720,7 +805,8 @@ def get_audio_duration(file_path):
         cmd = f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{file_path}"'
         result = subprocess.check_output(cmd, shell=True).decode("utf-8").strip()
         return float(result)
-    except:
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError, OSError) as e:
+        logger.debug("get_audio_duration fallback for '%s': %s", file_path, e)
         return 0
 
 VOICEBOX_API = "http://127.0.0.1:17493"
@@ -912,6 +998,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
     export_resolution = opts.get("export_resolution", "1080x1920")
     end_card_enabled = opts.get("end_card", True)
     end_card_text = opts.get("end_card_text", "Follow for more!")
+    hook_text = opts.get("hook_text", "")
     tpl = TEMPLATES.get(template_name, TEMPLATES["cinematic"])
     rpreset = RENDER_PRESETS.get(render_quality, RENDER_PRESETS["normal"])
 
@@ -936,7 +1023,9 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
 
         update_status("Transcribing..."); log_func(f"[{safe_id}] 📝 Transkripsi ({model_size})..."); progress_func(25)
         from faster_whisper import WhisperModel
-        lmodel = WhisperModel(model_size, device="cpu", compute_type="int8")
+        w_device, w_compute = detect_whisper_device()
+        log_func(f"[{safe_id}] 🖥️  Whisper device: {w_device} ({w_compute})")
+        lmodel = WhisperModel(model_size, device=w_device, compute_type=w_compute)
         segs, _ = lmodel.transcribe(str(audio_wav), language=lang, beam_size=5, word_timestamps=True)
         all_words = [{"start": w.start, "end": w.end, "text": w.word.strip().upper()} for seg in segs if seg.words for w in seg.words]
         if not all_words:
@@ -1119,8 +1208,21 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
         if use_bgm:
             bgm_idx = len([x for x in inputs if x == "-i"])
             inputs += ["-stream_loop", "-1", "-i", str(bgm_p)]
-            bv = min(max(bgm_volume, 0.05), 0.4) 
-            filter_parts.append(f"[{bgm_idx}:a]volume={bv}[bgm_vol]")
+            bv = min(max(bgm_volume, 0.05), 0.4)
+            duck_vol = 0.08  # BGM volume during speech
+            if skip_silent and speech_segments:
+                # Dynamic ducking: lower BGM during speech segments
+                duck_parts = []
+                for s_start, s_end in speech_segments:
+                    # Add small padding to make ducking smoother
+                    pad = 0.1
+                    duck_parts.append(f"if(between(t,{max(0, s_start - pad)},{s_end + pad}),{duck_vol},{bv})")
+                # Chain the conditions with *
+                duck_expr = "*".join(duck_parts)
+                filter_parts.append(f"[{bgm_idx}:a]volume='{duck_expr}':eval=frame[bgm_vol]")
+                log_func(f"[{safe_id}] 🎵 Dynamic BGM ducking: {len(speech_segments)} speech segments")
+            else:
+                filter_parts.append(f"[{bgm_idx}:a]volume={bv}[bgm_vol]")
             filter_parts.append(f"{audio_map}[bgm_vol]amix=inputs=2:duration=first:dropout_transition=2[a]")
             audio_map = "[a]"
 
@@ -1146,7 +1248,8 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             
         try:
             ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        except:
+        except (OSError, ValueError) as e:
+            logger.warning("ffmpeg Popen list form failed, falling back to shell: %s", e)
             shell_cmd = ' '.join(str(x) if not any(c in str(x) for c in ' ;()') else f'"{str(x)}"' for x in ffmpeg_cmd)
             ffmpeg_proc = subprocess.Popen(shell_cmd, shell=True, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -1203,6 +1306,11 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             log_func(f"[{safe_id}] ✅ Berhasil fetch & load {len(broll_map)} B-Roll images.")
 
         # --- MULTI-CAMERA STYLE RENDERING WITH THUMBNAIL INSERTION ---
+        silence_threshold = opts.get("silence_threshold", 0.6)
+        speech_segments = compute_speech_segments(all_words, silence_threshold)
+        skip_silent = silence_threshold > 0
+        if skip_silent and speech_segments:
+            log_func(f"[{safe_id}] ✂️  Silence removal: {len(speech_segments)} speech segments (threshold: {silence_threshold}s)")
         prev_gray = None
         lost_frames = 0
         last_face_pos = (frame_w // 2, frame_h // 2)
@@ -1247,6 +1355,10 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 ffmpeg_proc.stdin.write(auto_thumb_img.tobytes())
 
         logo_logged = False
+        emphasis_indices = detect_emphasis_words(all_words)
+        ZOOM_PUNCH_FACTOR = 1.08
+        ZOOM_PUNCH_DURATION = 0.3
+        zoom_punch_state = {"active": False, "end_time": 0}
         for frame_num in range(total_frames):
             ret, frame = cap.read()
             if not ret: break
@@ -1254,6 +1366,11 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             if needs_rotate:
                 frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
             cur_time = frame_num / fps
+
+            # Silence removal: skip frames outside speech segments
+            if skip_silent and not is_in_speech_segment(cur_time, speech_segments):
+                continue
+
             active_word_idx = -1
             for wi, wd in enumerate(all_words):
                 if wd["start"] <= cur_time <= wd["end"]:
@@ -1292,8 +1409,24 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
 
             # --- Dynamic camera: 1 person center lock, 2+ speaker cut + grid on overlap ---
             is_grid_mode = False
-            # APPLY ZOOM FACTOR
-            ch = int(frame_h / zoom)
+            # APPLY ZOOM FACTOR with optional zoom punch on emphasis words
+            effective_zoom = zoom
+            if active_word_idx in emphasis_indices:
+                if not zoom_punch_state["active"]:
+                    zoom_punch_state["active"] = True
+                    zoom_punch_state["end_time"] = cur_time + ZOOM_PUNCH_DURATION
+            if zoom_punch_state["active"]:
+                if cur_time < zoom_punch_state["end_time"]:
+                    # Ease-in-out zoom punch
+                    progress = (cur_time - (zoom_punch_state["end_time"] - ZOOM_PUNCH_DURATION)) / ZOOM_PUNCH_DURATION
+                    if progress < 0.5:
+                        punch = 1.0 + (ZOOM_PUNCH_FACTOR - 1.0) * (progress * 2)
+                    else:
+                        punch = ZOOM_PUNCH_FACTOR - (ZOOM_PUNCH_FACTOR - 1.0) * ((progress - 0.5) * 2)
+                    effective_zoom = zoom * punch
+                else:
+                    zoom_punch_state["active"] = False
+            ch = int(frame_h / effective_zoom)
             cw = int(ch * 9 / 16)
             if cw > frame_w:
                 cw = frame_w
@@ -1419,8 +1552,9 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 curr_line_op = ""
                 try:
                     pil_font_opini_small = ImageFont.truetype(pil_font_opini.path, 65)
-                except:
+                except (OSError, IOError, ValueError) as e:
                     pil_font_opini_small = pil_font_opini
+                    logger.debug("Opini font fallback: %s", e)
                 for w in words_op:
                     test_l = curr_line_op + (" " if curr_line_op else "") + w
                     bbox_op = draw.textbbox((0, 0), test_l, font=pil_font_opini)
@@ -1458,6 +1592,48 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                     ty_op = text_start_y + i * int((bbox_l[3] - bbox_l[1]) + 15)
                     draw_pro_text(draw, line, (tx_op, ty_op), f, fill=color, outline_width=outline,
                                   shadow_offset=(5, 7), shadow_alpha=160)
+
+            # Hook text overlay: render AI hook in first 3 seconds
+            HOOK_DISPLAY_DURATION = 3.0
+            if hook_text and cur_time < HOOK_DISPLAY_DURATION:
+                # Fade out in last 0.5s
+                hook_alpha = 255
+                if cur_time > HOOK_DISPLAY_DURATION - 0.5:
+                    hook_alpha = int(255 * (HOOK_DISPLAY_DURATION - cur_time) / 0.5)
+                hook_words = hook_text.upper().split()
+                hook_lines = []
+                curr_hook_line = ""
+                try:
+                    hook_font = ImageFont.truetype(pil_font.path, 55)
+                except (OSError, IOError):
+                    hook_font = pil_font
+                for w in hook_words:
+                    test_l = curr_hook_line + (" " if curr_hook_line else "") + w
+                    bbox_h = draw.textbbox((0, 0), test_l, font=hook_font)
+                    if (bbox_h[2] - bbox_h[0]) > (target_w - 100):
+                        hook_lines.append(curr_hook_line)
+                        curr_hook_line = w
+                    else:
+                        curr_hook_line = test_l
+                if curr_hook_line: hook_lines.append(curr_hook_line)
+                hook_total_h = len(hook_lines) * 70
+                hook_y_start = int(target_h * 0.25) - hook_total_h // 2
+                hook_ov = PILImage.new('RGBA', img_pil.size, (0, 0, 0, 0))
+                hook_draw = ImageDraw.Draw(hook_ov)
+                # Background pill
+                hook_draw.rounded_rectangle(
+                    [40, hook_y_start - 20, target_w - 40, hook_y_start + hook_total_h + 20],
+                    radius=20, fill=(0, 0, 0, int(180 * hook_alpha / 255))
+                )
+                img_pil = PILImage.alpha_composite(img_pil.convert('RGBA'), hook_ov).convert('RGB')
+                draw = ImageDraw.Draw(img_pil)
+                for i, line in enumerate(hook_lines):
+                    bbox_hl = draw.textbbox((0, 0), line, font=hook_font)
+                    hx = (target_w - (bbox_hl[2] - bbox_hl[0])) // 2
+                    hy = hook_y_start + i * 70
+                    # Yellow text with black outline
+                    draw.text((hx, hy), line, font=hook_font, fill=(0, 0, 0), stroke_width=8, stroke_fill=(0, 0, 0))
+                    draw.text((hx, hy), line, font=hook_font, fill=(*tpl.get("active_color", (255, 230, 0)), hook_alpha))
 
             # Watermark with pill background + optional logo
             wm_text = ""
@@ -1538,12 +1714,14 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 try:
                     root = opts.get("root")
                     if root: root.after(0, root.update_idletasks)
-                except: pass
+                except (RuntimeError, TclError) as e:
+                    logger.debug("GUI update skipped: %s", e)
 
         cap.release()
         if not ffmpeg_errored:
             try: ffmpeg_proc.stdin.close()
-            except: pass
+            except (OSError, BrokenPipeError) as e:
+                logger.debug("ffmpeg stdin close: %s", e)
             
             # SAVE SMART THUMBNAIL (optional)
             gen_thumb = opts.get("gen_thumb", True)
@@ -1574,6 +1752,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             df.write(f"\n#Shorts #Viral #Edukasi #FYP #Trending\n")
         log_func(f"[{safe_id}] ✅ Selesai -> {final_out.name}"); return True, str(final_out)
     except Exception as e:
+        logger.error("process_single_video failed [%s]: %s", safe_id, traceback.format_exc())
         log_func(f"[{safe_id}] ❌ {str(e)}"); return False, str(e)
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -1588,7 +1767,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self.g_f, text="Gemini Model:", text_color="#aaa").grid(row=1, column=0, padx=10, pady=5, sticky="w"); self.gm_var = ctk.StringVar(value=config.get("gemini_model", "gemini-2.0-flash")); ctk.CTkComboBox(self.g_f, values=["gemini-2.0-flash", "gemini-1.5-flash"], variable=self.gm_var, width=300, corner_radius=8).grid(row=1, column=1, padx=10, pady=5, sticky="ew")
         self.o_f = ctk.CTkFrame(self, fg_color="transparent"); self.o_f.grid(row=r, column=0, columnspan=2, sticky="ew", padx=20, pady=5); self.o_f.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.o_f, text="OpenRouter Key:", text_color="#aaa").grid(row=0, column=0, padx=10, pady=5, sticky="w"); self.ok_var = ctk.StringVar(value=config.get("openrouter_api_key", "")); ctk.CTkEntry(self.o_f, textvariable=self.ok_var, width=300, show="*", corner_radius=8).grid(row=0, column=1, padx=10, pady=5, sticky="ew")
-        ctk.CTkLabel(self.o_f, text="Model ID:", text_color="#aaa").grid(row=1, column=0, padx=10, pady=5, sticky="w"); self.om_var = ctk.StringVar(value=config.get("openrouter_model", "deepseek/deepseek-chat")); ctk.CTkEntry(self.o_f, textvariable=self.om_var, width=300, corner_radius=8).grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        ctk.CTkLabel(self.o_f, text="Model ID:", text_color="#aaa").grid(row=1, column=0, padx=10, pady=5, sticky="w"); self.om_var = ctk.StringVar(value=config.get("openrouter_model", "nvidia/nemotron-3-super-120b-a12b:free")); ctk.CTkEntry(self.o_f, textvariable=self.om_var, width=300, corner_radius=8).grid(row=1, column=1, padx=10, pady=5, sticky="ew")
         self.gr_f = ctk.CTkFrame(self, fg_color="transparent"); self.gr_f.grid(row=r, column=0, columnspan=2, sticky="ew", padx=20, pady=5); self.gr_f.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.gr_f, text="Groq API Key:", text_color="#aaa").grid(row=0, column=0, padx=10, pady=5, sticky="w"); self.grk_var = ctk.StringVar(value=config.get("groq_api_key", "")); ctk.CTkEntry(self.gr_f, textvariable=self.grk_var, width=300, show="*", corner_radius=8).grid(row=0, column=1, padx=10, pady=5, sticky="ew")
         ctk.CTkLabel(self.gr_f, text="Model ID:", text_color="#aaa").grid(row=1, column=0, padx=10, pady=5, sticky="w"); self.grm_var = ctk.StringVar(value=config.get("groq_model", "llama-3.3-70b-versatile")); ctk.CTkEntry(self.gr_f, textvariable=self.grm_var, width=300, corner_radius=8).grid(row=1, column=1, padx=10, pady=5, sticky="ew"); r += 1
@@ -1598,11 +1777,11 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Whisper Model (API):", font=("Arial", 13), text_color="#aaa").grid(row=r, column=0, padx=20, pady=5, sticky="w")
         self.wm_var = ctk.StringVar(value=config.get("whisper_model", "openai/whisper-1"))
         ctk.CTkEntry(self, textvariable=self.wm_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=5, sticky="ew"); r += 1
-        ctk.CTkLabel(self, text="Cookies:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.c_var = ctk.StringVar(value=config.get("cookies_path", "")); f_c = ctk.CTkFrame(self, fg_color="transparent"); f_c.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_c.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_c, textvariable=self.c_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_c, text="📁", width=50, command=self.br_c, fg_color="#3a3d4e", corner_radius=8).grid(row=0, column=1); r += 1
+        ctk.CTkLabel(self, text="Cookies:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.c_var = ctk.StringVar(value=config.get("cookies_path", "")); f_c = ctk.CTkFrame(self, fg_color="transparent"); f_c.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_c.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_c, textvariable=self.c_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_c, text="📁", width=50, command=self.browse_cookies, fg_color="#3a3d4e", corner_radius=8).grid(row=0, column=1); r += 1
         ctk.CTkLabel(self, text="Watermark:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.w_var = ctk.StringVar(value=config.get("watermark", "")); ctk.CTkEntry(self, textvariable=self.w_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Pexels API Key:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.pk_var = ctk.StringVar(value=config.get("pexels_api_key", "")); ctk.CTkEntry(self, textvariable=self.pk_var, width=300, corner_radius=8, show="*").grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="BGM Volume:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.bv_var = ctk.DoubleVar(value=config.get("bgm_volume", 0.15)); ctk.CTkSlider(self, from_=0, to=1, variable=self.bv_var, width=300).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
-        ctk.CTkLabel(self, text="Logo:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.l_var = ctk.StringVar(value=config.get("logo_path", "")); f_l = ctk.CTkFrame(self, fg_color="transparent"); f_l.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_l.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_l, textvariable=self.l_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_l, text="🖼️", width=50, command=self.br_l, fg_color="#3a3d4e", corner_radius=8).grid(row=0, column=1); r += 1
+        ctk.CTkLabel(self, text="Logo:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.l_var = ctk.StringVar(value=config.get("logo_path", "")); f_l = ctk.CTkFrame(self, fg_color="transparent"); f_l.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_l.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_l, textvariable=self.l_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_l, text="🖼️", width=50, command=self.browse_logo, fg_color="#3a3d4e", corner_radius=8).grid(row=0, column=1); r += 1
         ctk.CTkLabel(self, text="Font:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w");         self.f_opts = list_available_fonts(); self.f_var = ctk.StringVar(value=config.get("subtitle_font", "KOMIKAX_.ttf")); ctk.CTkComboBox(self, values=self.f_opts, variable=self.f_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         # --- Render Settings ---
         ctk.CTkLabel(self, text="Render Quality:", font=("Arial", 14, "bold"), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w")
@@ -1614,6 +1793,10 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Export Resolusi:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w")
         self.er_var = ctk.StringVar(value=config.get("export_resolution", "1080x1920"))
         ctk.CTkComboBox(self, values=["1080x1920", "720x1280"], variable=self.er_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
+        ctk.CTkLabel(self, text="Silence Threshold (detik):", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=10, sticky="w")
+        self.st_var = ctk.DoubleVar(value=config.get("silence_threshold", 0.6))
+        ctk.CTkSlider(self, from_=0.0, to=1.5, variable=self.st_var, width=200).grid(row=r, column=1, padx=20, pady=10, sticky="w")
+        ctk.CTkLabel(self, textvariable=self.st_var, text_color="#aaa", width=40).grid(row=r, column=1, padx=(220,0), pady=10, sticky="w"); r += 1
         self.ec_var = ctk.BooleanVar(value=config.get("end_card", True))
         ctk.CTkCheckBox(self, text="End Card (CTA di akhir video)", variable=self.ec_var, fg_color="#4b6e9c").grid(row=r, column=0, columnspan=2, padx=20, pady=5, sticky="w"); r += 1
         ctk.CTkLabel(self, text="End Card Text:", font=("Arial", 13), text_color="#ddd").grid(row=r, column=0, padx=20, pady=5, sticky="w")
@@ -1629,10 +1812,10 @@ class SettingsDialog(ctk.CTkToplevel):
         if c == "Gemini (Native)": self.g_f.grid()
         elif c == "Groq": self.gr_f.grid()
         else: self.o_f.grid()
-    def br_l(self):
+    def browse_logo(self):
         p = filedialog.askopenfilename(filetypes=[("Image", "*.png *.jpg *.jpeg"), ("PNG", "*.png"), ("JPEG", "*.jpg *.jpeg")])
         if p: self.l_var.set(p)
-    def br_c(self):
+    def browse_cookies(self):
         p = filedialog.askopenfilename(filetypes=[("TXT", "*.txt")])
         if p: self.c_var.set(p)
     def preview_subtitle(self):
@@ -1668,7 +1851,7 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception as e:
             messagebox.showerror("Preview Error", str(e))
     def save(self):
-        nc = {"ai_provider": self.p_var.get(), "gemini_api_key": self.gk_var.get().strip(), "gemini_model": self.gm_var.get(), "openrouter_api_key": self.ok_var.get().strip(), "openrouter_model": self.om_var.get().strip(), "groq_api_key": self.grk_var.get().strip(), "groq_model": self.grm_var.get().strip(), "pexels_api_key": self.pk_var.get().strip(), "cookies_path": self.c_var.get().strip(), "watermark": self.w_var.get().strip(), "subtitle_font": self.f_var.get(), "logo_path": self.l_var.get().strip(), "bgm_volume": self.bv_var.get(), "render_quality": self.rq_var.get(), "template": self.tpl_var.get(), "export_resolution": self.er_var.get(), "end_card": self.ec_var.get(), "end_card_text": self.ec_text_var.get().strip(), "whisper_provider": self.wp_var.get(), "whisper_model": self.wm_var.get().strip()}
+        nc = {"ai_provider": self.p_var.get(), "gemini_api_key": self.gk_var.get().strip(), "gemini_model": self.gm_var.get(), "openrouter_api_key": self.ok_var.get().strip(), "openrouter_model": self.om_var.get().strip(), "groq_api_key": self.grk_var.get().strip(), "groq_model": self.grm_var.get().strip(), "pexels_api_key": self.pk_var.get().strip(), "cookies_path": self.c_var.get().strip(), "watermark": self.w_var.get().strip(), "subtitle_font": self.f_var.get(), "logo_path": self.l_var.get().strip(), "bgm_volume": self.bv_var.get(), "render_quality": self.rq_var.get(), "template": self.tpl_var.get(), "export_resolution": self.er_var.get(), "end_card": self.ec_var.get(), "end_card_text": self.ec_text_var.get().strip(), "whisper_provider": self.wp_var.get(), "whisper_model": self.wm_var.get().strip(), "silence_threshold": self.st_var.get()}
         self.on_save(nc); self.destroy()
 
 class VideoItem(ctk.CTkFrame):
@@ -1676,7 +1859,7 @@ class VideoItem(ctk.CTkFrame):
         super().__init__(master, fg_color="#2a2d3e", corner_radius=12, border_width=1, border_color="#3a3d4e")
         self.index, self.remove_cb, self.log_func, self.config, self.get_link = index, remove_cb, log_func, config, get_link; self.is_json = False; self.sel_var = ctk.BooleanVar(value=True); ctk.CTkCheckBox(self, text="", variable=self.sel_var, width=20, fg_color="#4b6e9c", hover_color="#3a5a7a").grid(row=0, column=0, rowspan=2, padx=15, pady=10)
         self.l_f = ctk.CTkFrame(self, fg_color="transparent", width=70); self.l_f.grid(row=0, column=1, rowspan=2, padx=10, pady=10, sticky="nsew"); self.idx_lbl = ctk.CTkLabel(self.l_f, text=f"#{index+1}", font=("Arial", 18, "bold"), text_color="#4b6e9c"); self.idx_lbl.pack(); self.st_lbl = ctk.CTkLabel(self.l_f, text="Ready", font=("Arial", 11), text_color="#aaa"); self.st_lbl.pack()
-        self.top = ctk.CTkFrame(self, fg_color="transparent"); self.top.grid(row=0, column=2, sticky="ew", padx=10, pady=(10,0)); self.m_sw = ctk.CTkSegmentedButton(self.top, values=["Manual", "JSON"], command=self.tg_m); self.m_sw.set("Manual"); self.m_sw.pack(side="left")
+        self.top = ctk.CTkFrame(self, fg_color="transparent"); self.top.grid(row=0, column=2, sticky="ew", padx=10, pady=(10,0)); self.m_sw = ctk.CTkSegmentedButton(self.top, values=["Manual", "JSON"], command=self.toggle_mode); self.m_sw.set("Manual"); self.m_sw.pack(side="left")
         self.cont = ctk.CTkFrame(self, fg_color="transparent"); self.cont.grid(row=1, column=2, sticky="ew", padx=10, pady=(0,10)); self.man_f = ctk.CTkFrame(self.cont, fg_color="transparent"); self.man_f.pack(fill="x"); r1 = ctk.CTkFrame(self.man_f, fg_color="transparent"); r1.pack(fill="x", pady=2)
         ctk.CTkLabel(r1, text="Mulai:", text_color="#aaa").pack(side="left", padx=3); self.s_var = ctk.StringVar(value="00:00:00"); ctk.CTkEntry(r1, textvariable=self.s_var, width=70, corner_radius=6).pack(side="left", padx=3)
         ctk.CTkLabel(r1, text="Selesai:", text_color="#aaa").pack(side="left", padx=3); self.e_var = ctk.StringVar(value="00:00:10"); ctk.CTkEntry(r1, textvariable=self.e_var, width=70, corner_radius=6).pack(side="left", padx=3)
@@ -1692,7 +1875,7 @@ class VideoItem(ctk.CTkFrame):
         self.thumb_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(r2, text="IMG", variable=self.thumb_var, width=50, fg_color="#4b6e9c").pack(side="left", padx=3)
         self.op_var = ctk.StringVar(value="Masukkan teks judul opini"); ctk.CTkEntry(r2, textvariable=self.op_var, width=250, corner_radius=6).pack(side="left", padx=5)
-        self.gem_b = ctk.CTkButton(r2, text="✨ Analisis", width=90, command=self.an_gem, fg_color="#4b6e9c", hover_color="#3a5a7a", corner_radius=8); self.gem_b.pack(side="left", padx=10)
+        self.gem_b = ctk.CTkButton(r2, text="✨ Analisis", width=90, command=self.analyze_with_ai, fg_color="#4b6e9c", hover_color="#3a5a7a", corner_radius=8); self.gem_b.pack(side="left", padx=10)
         r3 = ctk.CTkFrame(self.man_f, fg_color="transparent")
         r3.pack(fill="x", pady=(2,0))
         self.br_var = ctk.BooleanVar(value=False)
@@ -1706,19 +1889,19 @@ class VideoItem(ctk.CTkFrame):
 
         ctk.CTkLabel(r3, text="Voice Hook MP3:", text_color="#aaa").pack(side="left", padx=(15,3))
         self.vh_var = ctk.StringVar(value="Pilih file MP3 hook..."); ctk.CTkEntry(r3, textvariable=self.vh_var, width=300, corner_radius=6).pack(side="left", padx=5)
-        ctk.CTkButton(r3, text="📂", width=40, command=self.br_vh, fg_color="#3a3d4e", corner_radius=6).pack(side="left", padx=2)
+        ctk.CTkButton(r3, text="📂", width=40, command=self.browse_voice_hook, fg_color="#3a3d4e", corner_radius=6).pack(side="left", padx=2)
         ctk.CTkLabel(r3, text="Hook Durasi:", text_color="#aaa").pack(side="left", padx=(10,3))
         self.hook_dur_var = ctk.DoubleVar(value=1.5)
         ctk.CTkSlider(r3, from_=0.5, to=5.0, variable=self.hook_dur_var, width=100).pack(side="left", padx=3)
         ctk.CTkLabel(r3, textvariable=self.hook_dur_var, text_color="#aaa", width=35).pack(side="left", padx=2)
         self.js_f = ctk.CTkFrame(self.cont, fg_color="transparent"); self.js_t = ctk.CTkTextbox(self.js_f, width=500, height=80, corner_radius=8, fg_color="#1e1e2e", text_color="#ccc"); self.js_t.pack(side="left", padx=10)
-        ctk.CTkButton(self, text="✕", width=35, fg_color="#c44", hover_color="#a33", corner_radius=8, command=lambda: remove_cb(self)).grid(row=0, column=3, padx=15, pady=10, rowspan=2); self.upd_g_b(); self.tg_m("Manual")
-    def tg_m(self, m):
+        ctk.CTkButton(self, text="✕", width=35, fg_color="#c44", hover_color="#a33", corner_radius=8, command=lambda: remove_cb(self)).grid(row=0, column=3, padx=15, pady=10, rowspan=2); self.update_ai_button(); self.toggle_mode("Manual")
+    def toggle_mode(self, m):
         if m == "Manual": self.js_f.pack_forget(); self.man_f.pack(fill="x"); self.is_json = False
         else: self.man_f.pack_forget(); self.js_f.pack(fill="x"); self.is_json = True
     def set_status(self, s, c=None): self.st_lbl.configure(text=s, text_color=c if c else "#aaa")
     def set_active(self, a=True): self.configure(border_color="#4b6e9c" if a else "#3a3d4e", border_width=2 if a else 1)
-    def upd_g_b(self):
+    def update_ai_button(self):
         p = self.config.get("ai_provider")
         if p == "Gemini (Native)": k = self.config.get("gemini_api_key")
         elif p == "Groq": k = self.config.get("groq_api_key")
@@ -1729,10 +1912,12 @@ class VideoItem(ctk.CTkFrame):
         try:
             z = float(self.z_var.get() or 1.0)
             y = float(self.y_var.get() or 0.35)
-        except: z, y = 1.0, 0.35
+        except (ValueError, TypeError) as e:
+            z, y = 1.0, 0.35
+            logger.debug("Zoom/Y-offset parse fallback: %s", e)
         hook_dur = self.hook_dur_var.get()
         
-        if not self.is_json: return [{ "link": lk, "start": self.s_var.get(), "end": self.e_var.get(), "title": self.t_var.get(), "lang": self.l_var.get() or "id", "model": self.mo_var.get(), "selected": self.sel_var.get(), "split": self.sp_var.get(), "thumb": self.thumb_var.get(), "mood": getattr(self, "_mood", "santai"), "zoom": z, "y_offset": y, "voice_hook": self.vh_var.get().strip(), "judul_opini": self.op_var.get().strip(), "use_broll": self.br_var.get(), "hook_dur": hook_dur, "_thumb_time": getattr(self, "_thumb_time", None), "_ai_desc": getattr(self, "_ai_desc", "") }]
+        if not self.is_json: return [{ "link": lk, "start": self.s_var.get(), "end": self.e_var.get(), "title": self.t_var.get(), "lang": self.l_var.get() or "id", "model": self.mo_var.get(), "selected": self.sel_var.get(), "split": self.sp_var.get(), "thumb": self.thumb_var.get(), "mood": getattr(self, "_mood", "santai"), "zoom": z, "y_offset": y, "voice_hook": self.vh_var.get().strip(), "judul_opini": self.op_var.get().strip(), "use_broll": self.br_var.get(), "hook_dur": hook_dur, "_thumb_time": getattr(self, "_thumb_time", None), "_ai_desc": getattr(self, "_ai_desc", ""), "_hook_text": getattr(self, "_hook_text", "") }]
         try:
             segs = json.loads(self.js_t.get("1.0", "end").strip())
             if isinstance(segs, dict): segs = [segs]
@@ -1746,11 +1931,13 @@ class VideoItem(ctk.CTkFrame):
                 s.setdefault("voice_hook", self.vh_var.get().strip()); s.setdefault("judul_opini", self.op_var.get().strip())
                 s.setdefault("use_broll", self.br_var.get())
             return segs
-        except: return []
-    def br_vh(self):
+        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+            logger.warning("JSON segment parse failed: %s", e)
+            return []
+    def browse_voice_hook(self):
         p = filedialog.askopenfilename(filetypes=[("MP3", "*.mp3")])
         if p: self.vh_var.set(p)
-    def an_gem(self):
+    def analyze_with_ai(self):
         lk = self.get_link()
         if not lk: return
         self.log_func("[#] Analisis segmen...")
@@ -1764,11 +1951,12 @@ class VideoItem(ctk.CTkFrame):
                 d = []
             if isinstance(d, dict): d = [d]
             if d:
-                if len(d) > 1: self.m_sw.set("JSON"); self.tg_m("JSON"); self.js_t.delete("1.0", "end"); self.js_t.insert("1.0", json.dumps(d, indent=2))
+                if len(d) > 1: self.m_sw.set("JSON"); self.toggle_mode("JSON"); self.js_t.delete("1.0", "end"); self.js_t.insert("1.0", json.dumps(d, indent=2))
                 else:
                     s = d[0]
                     self.s_var.set(s.get("start","00:00:00")); self.e_var.set(s.get("end","00:00:10"))
                     self.t_var.set(s.get("title","")); self._mood = s.get("mood","santai"); self._ai_desc = s.get("description","")
+                    self._hook_text = s.get("hook","")
                     self.op_var.set(s.get("judul_opini",""))
                     if s.get("split_screen", False):
                         self.sp_var.set(True)
@@ -1794,7 +1982,7 @@ class App(ctk.CTk):
         self.grid_columnconfigure(0, weight=1); [self.grid_rowconfigure(i, weight=0) for i in range(6)]; self.grid_rowconfigure(6, weight=1)
         # Header menu
         m = ctk.CTkFrame(self, height=40, fg_color="#1e1e2e", corner_radius=0); m.grid(row=0, column=0, sticky="ew"); m.grid_columnconfigure(0, weight=1)
-        ctk.CTkButton(m, text="⚙️ Settings", command=self.op_s, fg_color="transparent", hover_color="#3a3d4e").pack(side="left", padx=10, pady=5)
+        ctk.CTkButton(m, text="⚙️ Settings", command=self.open_settings, fg_color="transparent", hover_color="#3a3d4e").pack(side="left", padx=10, pady=5)
         ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v3.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#3a3d4e").pack(side="right", padx=10, pady=5)
         # Judul
         ctk.CTkLabel(self, text="YT Shorts Clipper Pro", font=("Arial", 26, "bold"), text_color="#fff").grid(row=1, column=0, pady=15)
@@ -1802,13 +1990,13 @@ class App(ctk.CTk):
         f_l = ctk.CTkFrame(self, fg_color="#2a2d3e", corner_radius=10); f_l.grid(row=2, column=0, padx=30, pady=5, sticky="ew"); f_l.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(f_l, text="🎬 Link YouTube:", font=("Arial", 14, "bold"), text_color="#ddd").pack(side="left", padx=(15,10), pady=10)
         self.l_var = ctk.StringVar(); ctk.CTkEntry(f_l, textvariable=self.l_var, width=500, corner_radius=8).pack(side="left", padx=10, fill="x", expand=True, pady=10)
-        ctk.CTkButton(f_l, text="🔍 Ambil & Analisis", command=self.st_an, fg_color="#4b6e9c", hover_color="#3a5a7a", corner_radius=8).pack(side="left", padx=(10,15), pady=10)
+        ctk.CTkButton(f_l, text="🔍 Ambil & Analisis", command=self.start_analysis, fg_color="#4b6e9c", hover_color="#3a5a7a", corner_radius=8).pack(side="left", padx=(10,15), pady=10)
         # Scrollable item list
         self.scr = ctk.CTkScrollableFrame(self, width=1050, height=350, fg_color="#13141c", corner_radius=12); self.scr.grid(row=3, column=0, padx=30, pady=10, sticky="nsew"); self.scr.grid_columnconfigure(0, weight=1)
         # Bottom buttons & progress
         f_b = ctk.CTkFrame(self, fg_color="transparent"); f_b.grid(row=4, column=0, pady=15)
-        ctk.CTkButton(f_b, text="➕ Tambah Segmen Manual", command=self.add_v, width=180, fg_color="#3a3d4e", hover_color="#2a2d3e", corner_radius=8).pack(side="left", padx=10)
-        self.p_btn = ctk.CTkButton(f_b, text="▶ PROSES TERPILIH", fg_color="#2e8b57", hover_color="#236b43", width=200, command=self.st_pr, corner_radius=8).pack(side="left", padx=30)
+        ctk.CTkButton(f_b, text="➕ Tambah Segmen Manual", command=self.add_video_item, width=180, fg_color="#3a3d4e", hover_color="#2a2d3e", corner_radius=8).pack(side="left", padx=10)
+        self.p_btn = ctk.CTkButton(f_b, text="▶ PROSES TERPILIH", fg_color="#2e8b57", hover_color="#236b43", width=200, command=self.start_processing, corner_radius=8).pack(side="left", padx=30)
         self.p_bar = ctk.CTkProgressBar(self, width=1050, corner_radius=5, fg_color="#2a2d3e", progress_color="#4b6e9c"); self.p_bar.grid(row=5, column=0, pady=5, padx=30); self.p_bar.set(0)
         # Log box
         self.log_t = ctk.CTkTextbox(self, width=1050, height=180, fg_color="#13141c", text_color="#ddd", corner_radius=12, border_width=1, border_color="#3a3d4e"); self.log_t.grid(row=6, column=0, padx=30, pady=(5,20), sticky="nsew")
@@ -1819,7 +2007,7 @@ class App(ctk.CTk):
         if saved and saved.get("segments"):
             self.log("[📂] Queue sebelumnya ditemukan, memulihkan...")
             for s in saved["segments"]:
-                self.add_v()
+                self.add_video_item()
                 it = self.v_items[-1]
                 it.s_var.set(s.get("start", "00:00:00"))
                 it.e_var.set(s.get("end", "00:00:10"))
@@ -1832,7 +2020,7 @@ class App(ctk.CTk):
                 if s.get("link"): self.l_var.set(s["link"])
             self.log(f"[📂] {len(saved['segments'])} segmen dipulihkan.")
         else:
-            self.add_v()
+            self.add_video_item()
     def write(self, m):
         with self._stdout_lock:
             try:
@@ -1843,20 +2031,20 @@ class App(ctk.CTk):
             except Exception:
                 pass
     def flush(self): pass
-    def op_s(self): SettingsDialog(self, self.config, self.on_s).grab_set()
-    def on_s(self, nc): self.config = nc; save_config(nc); [setattr(it, 'config', nc) for it in self.v_items]; [it.upd_g_b() for it in self.v_items]
-    def add_v(self): i = len(self.v_items); it = VideoItem(self.scr, i, self.rem_v, self.log, self.config, lambda: self.l_var.get()); it.grid(row=i, column=0, pady=8, padx=15, sticky="ew"); self.v_items.append(it)
-    def rem_v(self, item):
+    def open_settings(self): SettingsDialog(self, self.config, self.on_settings_save).grab_set()
+    def on_settings_save(self, nc): self.config = nc; save_config(nc); [setattr(it, 'config', nc) for it in self.v_items]; [it.update_ai_button() for it in self.v_items]
+    def add_video_item(self): i = len(self.v_items); it = VideoItem(self.scr, i, self.remove_video_item, self.log, self.config, lambda: self.l_var.get()); it.grid(row=i, column=0, pady=8, padx=15, sticky="ew"); self.v_items.append(it)
+    def remove_video_item(self, item):
         if len(self.v_items) > 1:
             item.destroy()
             self.v_items.remove(item)
             for i, v in enumerate(self.v_items):
                 v.idx_lbl.configure(text=f"#{i+1}")
     def log(self, m): self.write(m + "\n")
-    def st_an(self):
+    def start_analysis(self):
         lk = self.l_var.get().strip()
-        if lk: threading.Thread(target=self.run_an, args=(lk,), daemon=True).start()
-    def run_an(self, link):
+        if lk: threading.Thread(target=self.run_analysis, args=(lk,), daemon=True).start()
+    def run_analysis(self, link):
         try:
             self.log("[#] Fetching metadata..."); vid_id = get_safe_id(link); sid = vid_id
             y_p = "yt-dlp"; local_y = BASE_DIR / "bin" / "yt-dlp.exe"; 
@@ -1871,13 +2059,16 @@ class App(ctk.CTk):
             self.log(f"[#] Video: {title}")
             cmd_subs = f'{y_p} {c_o} --user-agent "{UA}" --extractor-args "youtube:player_client=android" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
             try: subprocess.run(cmd_subs, shell=True, capture_output=True, timeout=60)
-            except: self.log("[!] Subtitle tidak tersedia, lanjut tanpa transkrip.")
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+                self.log("[!] Subtitle tidak tersedia, lanjut tanpa transkrip.")
+                logger.debug("Subtitle download failed: %s", e)
             orig = TEMP_DIR / f"{sid}_full.mp4"
             if not orig.exists():
                 self.log("[#] Downloading...")
                 try:
                     download_youtube(link, orig, self.config.get("cookies_path"), self.log)
                 except Exception as e:
+                    logger.error("YouTube download failed: %s", e)
                     self.log(f"❌ {str(e)}")
                     return
             srt = list(TEMP_DIR.glob(f"{sid}_full.*.srt")); txt = ""
@@ -1895,13 +2086,15 @@ class App(ctk.CTk):
                 d = json.loads(raw_json)
             else:
                 d = []
-            self.after(0, lambda: self.pop_segs(d))
-        except Exception as e: self.log(f"❌ Error: {str(e)}")
-    def pop_segs(self, d):
+            self.after(0, lambda: self.populate_segments(d))
+        except Exception as e:
+            logger.error("Analysis failed: %s", e)
+            self.log(f"❌ Error: {str(e)}")
+    def populate_segments(self, d):
         [i.destroy() for i in self.v_items]; self.v_items.clear()
         if isinstance(d, dict): d = [d]
         for s in d:
-            self.add_v(); it = self.v_items[-1]
+            self.add_video_item(); it = self.v_items[-1]
             it.s_var.set(s.get("start","00:00:00")); it.e_var.set(s.get("end","00:00:10"))
             it.t_var.set(s.get("title","")); it._mood = s.get("mood","santai"); it._ai_desc = s.get("description","")
             it.op_var.set(s.get("judul_opini",""))
@@ -1918,7 +2111,7 @@ class App(ctk.CTk):
                     self.log(f"[✅] Voice hook generated -> {hook_path.name}")
                 else:
                     self.log("🎤 Rekam manual dan upload MP3-nya!\n")
-    def st_pr(self):
+    def start_processing(self):
         al = []
         for it in self.v_items:
             for d in it.get_data():
@@ -1932,8 +2125,8 @@ class App(ctk.CTk):
                 return
             self.proc = True
         self.p_bar.set(0)
-        threading.Thread(target=self.run_b, args=(al,), daemon=True).start()
-    def run_b(self, segs):
+        threading.Thread(target=self.run_batch, args=(al,), daemon=True).start()
+    def run_batch(self, segs):
         total = len(segs)
         for i, v in enumerate(segs):
             it = v["_item"]; it.set_active(True); it.set_status("Processing..."); ss = time_str_to_seconds(v["start"]); es = time_str_to_seconds(v["end"])
@@ -1953,6 +2146,7 @@ class App(ctk.CTk):
                 "judul_opini": v.get("judul_opini", ""),
                 "use_broll": v.get("use_broll", False),
                 "hook_dur": v.get("hook_dur", 1.5),
+                "hook_text": v.get("_hook_text", ""),
                 "gen_thumb": v.get("thumb", True),
                 "root": self,
                 "config": self.config,
@@ -1961,6 +2155,7 @@ class App(ctk.CTk):
                 "export_resolution": self.config.get("export_resolution", "1080x1920"),
                 "end_card": self.config.get("end_card", True),
                 "end_card_text": self.config.get("end_card_text", "Follow for more!"),
+                "silence_threshold": self.config.get("silence_threshold", 0.6),
             }
             success, msg = process_single_video(v["link"], ss, es, v["title"], v["lang"], v["model"], self.log, lambda p, idx=i: self.p_bar.set((idx*100+p)/(total*100)), opts=o)
             it.set_status("Done" if success else "Error"); it.set_active(False)
