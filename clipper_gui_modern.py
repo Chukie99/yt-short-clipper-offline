@@ -1228,16 +1228,22 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             bv = min(max(bgm_volume, 0.05), 0.4)
             duck_vol = 0.08  # BGM volume during speech
             if skip_silent and speech_segments:
-                # Dynamic ducking: lower BGM during speech segments
-                # between() returns 0 or 1, sum them to detect ANY active segment
+                # After silence removal, audio is trimmed to speech-only timeline.
+                # Duck constantly from cover_duration onward (all remaining audio is speech).
+                filter_parts.append(
+                    f"[{bgm_idx}:a]volume='if(gte(t,{cover_duration:.3f}),{duck_vol},{bv})':eval=frame[bgm_vol]"
+                )
+                log_func(f"[{safe_id}] \U0001f3b5 BGM ducked constantly (silence removed, all audio is speech)")
+            elif speech_segments:
+                # No silence removal - audio is still full/untouched.
+                # Duck per-segment using ORIGINAL timeline coordinates.
                 between_parts = []
                 for s_start, s_end in speech_segments:
                     pad = 0.1
                     between_parts.append(f"between(t,{max(0, s_start - pad):.3f},{s_end + pad:.3f})")
                 duck_expr = "+".join(between_parts)
-                # if(sum > 0, duck_vol, bv) - duck when in ANY speech segment
                 filter_parts.append(f"[{bgm_idx}:a]volume='if({duck_expr},{duck_vol},{bv})':eval=frame[bgm_vol]")
-                log_func(f"[{safe_id}] 🎵 Dynamic BGM ducking: {len(speech_segments)} speech segments")
+                log_func(f"[{safe_id}] \U0001f3b5 BGM ducking: {len(speech_segments)} speech segments (original timeline)")
             else:
                 filter_parts.append(f"[{bgm_idx}:a]volume={bv}[bgm_vol]")
             filter_parts.append(f"{audio_map}[bgm_vol]amix=inputs=2:duration=first:dropout_transition=2[a]")
