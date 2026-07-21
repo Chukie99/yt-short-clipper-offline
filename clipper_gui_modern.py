@@ -23,7 +23,7 @@ logger.addHandler(_sh)
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 import customtkinter as ctk
-from tkinter import messagebox, Menu, filedialog
+from tkinter import messagebox, Menu, filedialog, TclError
 import cv2
 import numpy as np
 from PIL import Image as PILImage, ImageDraw, ImageFont
@@ -1194,6 +1194,13 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
         filter_parts.append(f"[1:a]adelay={delay_ms}|{delay_ms}[a_delayed]")
         audio_map = "[a_delayed]"
 
+        # Silence removal config (must be before audio filter block)
+        silence_threshold = opts.get("silence_threshold", 0.6)
+        speech_segments = compute_speech_segments(all_words, silence_threshold)
+        skip_silent = silence_threshold > 0
+        if skip_silent and speech_segments:
+            log_func(f"[{safe_id}] ✂️  Silence removal: {len(speech_segments)} speech segments (threshold: {silence_threshold}s)")
+
         if use_hook:
             # Duck original audio during hook to avoid clash (from t=0)
             filter_parts.append(
@@ -1305,12 +1312,6 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                         pass
             log_func(f"[{safe_id}] ✅ Berhasil fetch & load {len(broll_map)} B-Roll images.")
 
-        # --- MULTI-CAMERA STYLE RENDERING WITH THUMBNAIL INSERTION ---
-        silence_threshold = opts.get("silence_threshold", 0.6)
-        speech_segments = compute_speech_segments(all_words, silence_threshold)
-        skip_silent = silence_threshold > 0
-        if skip_silent and speech_segments:
-            log_func(f"[{safe_id}] ✂️  Silence removal: {len(speech_segments)} speech segments (threshold: {silence_threshold}s)")
         prev_gray = None
         lost_frames = 0
         last_face_pos = (frame_w // 2, frame_h // 2)
