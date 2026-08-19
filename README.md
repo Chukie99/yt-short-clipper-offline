@@ -2,7 +2,7 @@
 
 # 🎬 YT Short Clipper Pro
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/colab.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb)
 
 **AI-Powered YouTube Shorts Generator**
 
@@ -39,7 +39,7 @@ Ubah video YouTube panjang menjadi Shorts viral secara otomatis dengan AI, face 
 
 ### 1-Click Colab (Recommended)
 
-Klik badge di atas atau [buka langsung](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/colab.ipynb). Jalankan satu cell, dapatkan URL ngrok, akses dari browser HP/laptop.
+Klik badge di atas atau [buka langsung](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb). Jalankan 2 cells, dapatkan URL ngrok, akses dari browser HP/laptop.
 
 ### Download EXE
 
@@ -122,7 +122,7 @@ yt-short-clipper-offline/
 ├── clipper_core.py          # Core logic (shared by all interfaces)
 ├── app.py                   # Streamlit WebUI
 ├── clipper_web.py           # Gradio WebUI
-├── colab.ipynb              # 1-Click Colab notebook
+├── colab.ipynb              # 1-Click Colab notebook (root)
 ├── build_exe.py             # Script build EXE
 ├── config.json              # Konfigurasi (API keys, settings)
 ├── cookies.txt              # YouTube cookies
@@ -131,7 +131,9 @@ yt-short-clipper-offline/
 ├── fonts/                   # Font untuk subtitle
 ├── backsound/               # Background music files
 ├── output/                  # Hasil video
-└── dist/                    # EXE build
+├── dist/                    # EXE build
+└── docs/
+    └── YT_Short_Clipper.ipynb  # Colab notebook (recommended)
 ```
 
 ---

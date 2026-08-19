@@ -6,8 +6,17 @@ Mirip arsitektur MoneyPrinterTurbo.
 import os, sys, json, time, re, subprocess, threading, queue as qmod, signal
 from pathlib import Path
 
-# --- Colab / Drive setup (harus di-override oleh notebook caller) ---
+# --- Colab / Drive setup ---
 IS_COLAB = "google.colab" in sys.modules
+
+# Auto-mount Google Drive if running in Colab
+if IS_COLAB:
+    try:
+        from google.colab import drive
+        drive.mount('/content/drive')
+        print("✅ Google Drive mounted!")
+    except Exception as e:
+        print(f"⚠️ Drive mount failed: {e} — using local output only")
 
 # --- Tambahkan path repo agar clipper_core bisa di-import ---
 REPO_DIR = Path(__file__).parent.absolute()
