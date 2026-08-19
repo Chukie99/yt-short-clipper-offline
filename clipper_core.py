@@ -789,11 +789,11 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
     IS_COLAB = "google.colab" in sys.modules
 
     format_variants = [
+        '--extractor-args "youtube:player_client=android_vr" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
         '--extractor-args "youtube:player_client=tv,web_creator,mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
         '--extractor-args "youtube:player_client=mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
-        '--extractor-args "youtube:player_client=tv,mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
-        '--extractor-args "youtube:player_client=tv,web_creator" -f "bestvideo+bestaudio/best"',
-        '--extractor-args "youtube:player_client=mweb" -f "bestvideo+bestaudio/best"',
+        '--extractor-args "youtube:player_client=android_vr" -f "best"',
+        '--extractor-args "youtube:player_client=tv,mediaconnect" -f "bestvideo+bestaudio/best"',
     ]
 
     strategies = []
