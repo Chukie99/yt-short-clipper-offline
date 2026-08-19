@@ -273,10 +273,13 @@ def run_analysis(link, settings, collector):
                     with open(cfg_path) as f:
                         cfg_data = json.load(f)
                         cookies_file = cfg_data.get("cookies_path", "")
+                        collector.log(f"[🔍] Config cookies_path: {cookies_file}")
                 if not cookies_file:
                     default_cookies = Path(REPO_DIR) / "cookies.txt"
                     if default_cookies.exists():
                         cookies_file = str(default_cookies)
+                        collector.log(f"[🔍] Using default cookies: {cookies_file}")
+                collector.log(f"[🔍] Final cookies: {cookies_file}")
                 download_youtube(link, orig, cookies_file, collector.log)
             except Exception as e:
                 collector.log(f"⚠️ Download error: {str(e)[:200]}")

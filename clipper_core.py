@@ -787,27 +787,28 @@ def apply_sharpen(frame, strength=0.3):
 def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
     ytdlp_path = get_ytdlp_path()
     IS_COLAB = "google.colab" in sys.modules
-    IS_HEADLESS = not os.environ.get("DISPLAY")
 
     format_variants = [
-        '--extractor-args "youtube:player_client=tv,web_creator,mediaconnect" -f "best"',
-        '--extractor-args "youtube:player_client=mediaconnect" -f "best"',
-        '--extractor-args "youtube:player_client=tv,mediaconnect" -f "best"',
-        '--extractor-args "youtube:player_client=web_creator" -f "best"',
-        '--extractor-args "youtube:player_client=mweb" --extractor-args "youtube:player_skip=webpage" -f "best"',
+        '--extractor-args "youtube:player_client=tv,web_creator,mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
+        '--extractor-args "youtube:player_client=mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
+        '--extractor-args "youtube:player_client=tv,mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
+        '--extractor-args "youtube:player_client=tv,web_creator" -f "bestvideo+bestaudio/best"',
+        '--extractor-args "youtube:player_client=mweb" -f "bestvideo+bestaudio/best"',
     ]
 
     strategies = []
-    cp = cookies_path
 
+    # ALWAYS use cookies if available
+    cp = cookies_path
     if cp and Path(cp).exists():
+        log_func(f"[🍪] Using cookies: {cp}")
         base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --cookies "{cp}"'
-        for fmt in format_variants:
-            strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
     else:
+        log_func("[⚠️] No cookies file found, download may fail")
         base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
-        for fmt in format_variants:
-            strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
+
+    for fmt in format_variants:
+        strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
 
     for i, cmd in enumerate(strategies[:max_retries], 1):
         try:
