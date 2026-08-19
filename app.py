@@ -267,7 +267,17 @@ def run_analysis(link, settings, collector):
         if not orig.exists():
             collector.log("[#] Downloading video...")
             try:
-                download_youtube(link, orig, "", collector.log)
+                cookies_file = ""
+                cfg_path = Path(REPO_DIR) / "config.json"
+                if cfg_path.exists():
+                    with open(cfg_path) as f:
+                        cfg_data = json.load(f)
+                        cookies_file = cfg_data.get("cookies_path", "")
+                if not cookies_file:
+                    default_cookies = Path(REPO_DIR) / "cookies.txt"
+                    if default_cookies.exists():
+                        cookies_file = str(default_cookies)
+                download_youtube(link, orig, cookies_file, collector.log)
             except Exception as e:
                 collector.log(f"⚠️ Download error: {str(e)[:200]}")
 
