@@ -786,12 +786,13 @@ def apply_sharpen(frame, strength=0.3):
 
 def download_youtube(link, output_path, cookies_path, log_func, max_retries=3):
     ytdlp_path = get_ytdlp_path()
-    base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --js-runtime node --retries 10 --extractor-retries infinite --merge-output-format mp4'
+    IS_COLAB = "google.colab" in sys.modules
+    base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
     cp = cookies_path
     cookies_opts = []
     if cp and Path(cp).exists():
         cookies_opts.append(f'--cookies "{cp}"')
-    else:
+    elif not IS_COLAB:
         cookies_opts.append("--cookies-from-browser chrome")
     format_variants = [
         '-f "bv*+ba/b"',
@@ -803,6 +804,9 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=3):
     for fmt in format_variants:
         for ck in cookies_opts:
             strategies.append(f'{base_cmd} {ck} {fmt} -o "{output_path}" "{link}"')
+    if not strategies:
+        for fmt in format_variants:
+            strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
     for i, cmd in enumerate(strategies[:max_retries], 1):
         try:
             log_func(f"[⬇️] Download attempt {i}/{max_retries}...")
@@ -827,7 +831,7 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=3):
                 log_func(f"[⚠️] Download error: {str(e)[:100]}")
             if output_path.exists():
                 output_path.unlink(missing_ok=True)
-    raise Exception("❌ Gagal mendownload video. Tutup Chrome (biar cookies bisa diambil) lalu coba lagi, atau export cookies ke file.")
+    raise Exception("❌ Gagal mendownload video. Coba lagi atau gunakan cookies file.")
 
 def get_audio_duration(file_path):
     try:
