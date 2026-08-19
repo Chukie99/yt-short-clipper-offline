@@ -784,28 +784,28 @@ def apply_sharpen(frame, strength=0.3):
     blurred = cv2.GaussianBlur(frame, (0, 0), 2.0)
     return cv2.addWeighted(frame, 1.0 + strength, blurred, -strength, 0)
 
-def download_youtube(link, output_path, cookies_path, log_func, max_retries=3):
+def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
     ytdlp_path = get_ytdlp_path()
     IS_COLAB = "google.colab" in sys.modules
     IS_HEADLESS = not os.environ.get("DISPLAY")
 
     format_variants = [
-        '-f "bv*+ba/b"',
-        '-f "bestvideo+bestaudio/best"',
-        '-f "best"',
-        '-f "best" --extractor-args "youtube:player_client=android,ios"',
-        '-f "best" --extractor-args "youtube:player_client=mweb"',
+        '--extractor-args "youtube:player_client=tv" -f "best"',
+        '--extractor-args "youtube:player_client=mweb" -f "best"',
+        '--extractor-args "youtube:player_client=tv,mweb" -f "best"',
+        '--extractor-args "youtube:player_client=android" -f "best"',
+        '--extractor-args "youtube:player_client=ios" -f "best"',
     ]
 
     strategies = []
     cp = cookies_path
 
     if cp and Path(cp).exists():
-        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --cookies "{cp}"'
+        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --nocheckcertificate --cookies "{cp}"'
         for fmt in format_variants:
             strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
     else:
-        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
+        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --nocheckcertificate'
         for fmt in format_variants:
             strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
 
