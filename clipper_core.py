@@ -801,11 +801,11 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
     cp = cookies_path
 
     if cp and Path(cp).exists():
-        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --nocheckcertificate --cookies "{cp}"'
+        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --cookies "{cp}"'
         for fmt in format_variants:
             strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
     else:
-        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --nocheckcertificate'
+        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
         for fmt in format_variants:
             strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
 

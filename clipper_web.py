@@ -94,7 +94,7 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
         if cookies_file:
             cookies_opts = f'--cookies "{cookies_file}"'
 
-        cmd_info = f'{y_p} {cookies_opts} --user-agent "{UA}" --nocheckcertificate --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
+        cmd_info = f'{y_p} {cookies_opts} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
         import subprocess
         subprocess.run(cmd_info, shell=True, capture_output=True, timeout=30)
 
@@ -108,7 +108,7 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
         collector.log(f"[#] Video: {title}")
 
         # Try subtitles
-        cmd_subs = f'{y_p} {cookies_opts} --user-agent "{UA}" --nocheckcertificate --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
+        cmd_subs = f'{y_p} {cookies_opts} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
         try:
             subprocess.run(cmd_subs, shell=True, capture_output=True, timeout=60)
         except Exception:

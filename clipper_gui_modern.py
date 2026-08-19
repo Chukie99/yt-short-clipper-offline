@@ -317,7 +317,7 @@ class App(ctk.CTk):
             y_p = get_ytdlp_path()
             cp = self.config.get("cookies_path", "")
             c_o = f'--cookies "{cp}"' if cp and os.path.exists(cp) else ""
-            cmd_info = f'{y_p} {c_o} --user-agent "{UA}" --nocheckcertificate --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
+            cmd_info = f'{y_p} {c_o} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
             subprocess.run(cmd_info, shell=True, capture_output=True, timeout=30)
             info_f = TEMP_DIR / f"{sid}_full.info.json"
             title, desc = sid, ""
@@ -327,7 +327,7 @@ class App(ctk.CTk):
                     title = m.get("title", sid)
                     desc = m.get("description","")[:500]
             self.log(f"[#] Video: {title}")
-            cmd_subs = f'{y_p} {c_o} --user-agent "{UA}" --nocheckcertificate --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
+            cmd_subs = f'{y_p} {c_o} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
             try:
                 subprocess.run(cmd_subs, shell=True, capture_output=True, timeout=60)
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
