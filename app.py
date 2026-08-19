@@ -243,7 +243,7 @@ def run_analysis(link, settings, collector):
         sid = vid_id
         y_p = get_ytdlp_path()
 
-        cmd_info = f'{y_p} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
+        cmd_info = f'{y_p} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,web_creator,mediaconnect" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
         subprocess.run(cmd_info, shell=True, capture_output=True, timeout=30)
 
         info_f = TEMP_DIR / f"{sid}_full.info.json"
@@ -256,7 +256,7 @@ def run_analysis(link, settings, collector):
         collector.log(f"[#] Video: {title}")
 
         # Try subtitles
-        cmd_subs = f'{y_p} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,mweb" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
+        cmd_subs = f'{y_p} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,web_creator,mediaconnect" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
         try:
             subprocess.run(cmd_subs, shell=True, capture_output=True, timeout=60)
         except Exception:

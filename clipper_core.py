@@ -790,11 +790,11 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
     IS_HEADLESS = not os.environ.get("DISPLAY")
 
     format_variants = [
-        '--extractor-args "youtube:player_client=tv" -f "best"',
-        '--extractor-args "youtube:player_client=mweb" -f "best"',
-        '--extractor-args "youtube:player_client=tv,mweb" -f "best"',
-        '--extractor-args "youtube:player_client=android" -f "best"',
-        '--extractor-args "youtube:player_client=ios" -f "best"',
+        '--extractor-args "youtube:player_client=tv,web_creator,mediaconnect" -f "best"',
+        '--extractor-args "youtube:player_client=mediaconnect" -f "best"',
+        '--extractor-args "youtube:player_client=tv,mediaconnect" -f "best"',
+        '--extractor-args "youtube:player_client=web_creator" -f "best"',
+        '--extractor-args "youtube:player_client=mweb" --extractor-args "youtube:player_skip=webpage" -f "best"',
     ]
 
     strategies = []
