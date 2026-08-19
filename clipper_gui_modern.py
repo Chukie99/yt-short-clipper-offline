@@ -316,7 +316,7 @@ class App(ctk.CTk):
             sid = vid_id
             y_p = get_ytdlp_path()
             cp = self.config.get("cookies_path", "")
-            c_o = f'--cookies "{cp}"' if cp and os.path.exists(cp) else "--cookies-from-browser chrome"
+            c_o = f'--cookies "{cp}"' if cp and os.path.exists(cp) else ""
             cmd_info = f'{y_p} {c_o} --user-agent "{UA}" --extractor-args "youtube:player_client=android" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
             subprocess.run(cmd_info, shell=True, capture_output=True, timeout=30)
             info_f = TEMP_DIR / f"{sid}_full.info.json"

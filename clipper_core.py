@@ -787,26 +787,28 @@ def apply_sharpen(frame, strength=0.3):
 def download_youtube(link, output_path, cookies_path, log_func, max_retries=3):
     ytdlp_path = get_ytdlp_path()
     IS_COLAB = "google.colab" in sys.modules
-    base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
-    cp = cookies_path
-    cookies_opts = []
-    if cp and Path(cp).exists():
-        cookies_opts.append(f'--cookies "{cp}"')
-    elif not IS_COLAB:
-        cookies_opts.append("--cookies-from-browser chrome")
+    IS_HEADLESS = not os.environ.get("DISPLAY")
+
     format_variants = [
         '-f "bv*+ba/b"',
         '-f "bestvideo+bestaudio/best"',
         '-f "best"',
-        '-f "best" --extractor-args "youtube:player_client=android"',
+        '-f "best" --extractor-args "youtube:player_client=android,ios"',
+        '-f "best" --extractor-args "youtube:player_client=mweb"',
     ]
+
     strategies = []
-    for fmt in format_variants:
-        for ck in cookies_opts:
-            strategies.append(f'{base_cmd} {ck} {fmt} -o "{output_path}" "{link}"')
-    if not strategies:
+    cp = cookies_path
+
+    if cp and Path(cp).exists():
+        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --cookies "{cp}"'
         for fmt in format_variants:
             strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
+    else:
+        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
+        for fmt in format_variants:
+            strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
+
     for i, cmd in enumerate(strategies[:max_retries], 1):
         try:
             log_func(f"[⬇️] Download attempt {i}/{max_retries}...")

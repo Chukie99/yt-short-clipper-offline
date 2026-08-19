@@ -93,8 +93,6 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
         cookies_opts = ""
         if cookies_file:
             cookies_opts = f'--cookies "{cookies_file}"'
-        else:
-            cookies_opts = "--cookies-from-browser chrome"
 
         cmd_info = f'{y_p} {cookies_opts} --user-agent "{UA}" --extractor-args "youtube:player_client=android" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
         import subprocess
