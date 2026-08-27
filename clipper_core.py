@@ -900,6 +900,27 @@ def voicebox_generate(text: str, output_path: Path, log_func=None) -> bool:
             log_func(f"[🎤] Voicebox error: {str(e)[:100]}")
         return False
 
+class KalmanFilter:
+    """1D Kalman filter for smoothing face-tracking coordinates.
+
+    Restored during refactor (was lost when logic was moved to clipper_core.py;
+    clipper_core itself still referenced KalmanFilter at the render loop).
+    """
+    def __init__(self, process_noise=1e-5, measurement_noise=1e-2):
+        self.process_noise = process_noise
+        self.measurement_noise = measurement_noise
+        self.estimate = 0
+        self.error_cov = 1
+
+    def update(self, measurement):
+        # Prediction step
+        error_cov = self.error_cov + self.process_noise
+        # Correction step
+        kalman_gain = error_cov / (error_cov + self.measurement_noise)
+        self.estimate = self.estimate + kalman_gain * (measurement - self.estimate)
+        self.error_cov = (1 - kalman_gain) * error_cov
+        return self.estimate
+
 @dataclass
 class FaceState:
     cx: float = 0.0

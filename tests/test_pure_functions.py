@@ -1,157 +1,163 @@
-"""Unit tests for yt-short-clipper-offline pure functions."""
-import sys
+"""Unit tests for yt-short-clipper-offline pure functions.
+
+Strategy
+--------
+`clipper_core.py` imports heavy / optional deps at module top-level:
+  - cv2, numpy, mediapipe (optional heavy ML)
+  - PIL (Pillow)
+  - dotenv
+  - google.genai (optional)
+
+Importing `clipper_core` directly therefore requires those packages.  To keep
+tests hermetic and fast we inject lightweight stand-ins into ``sys.modules``
+*before* importing the module under test.  After the import we exercise the
+pure functions (KalmanFilter, get_safe_id, time_str_to_seconds,
+compute_speech_segments, detect_emphasis_words, SpeakerTracker._match_face)
+without touching any real video / network / GPU code.
+"""
 import os
+import sys
 import math
-import pytest
-
-# Add parent dir to path so we can import the main module
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-# We need to mock some imports that require GUI / hardware
 import types
-mock_cv2 = types.ModuleType("cv2")
-mock_cv2.CAP_PROP_FPS = 5
-mock_cv2.CAP_PROP_FRAME_WIDTH = 3
-mock_cv2.CAP_PROP_FRAME_HEIGHT = 4
-mock_cv2.CAP_PROP_FRAME_COUNT = 7
-mock_cv2.COLOR_BGR2RGB = 4
-mock_cv2.COLOR_RGB2GRAY = 6
-mock_cv2.COLOR_BGR2LAB = 44
-mock_cv2.COLOR_LAB2BGR = 55
-mock_cv2.COLOR_BGR2HSV = 40
-mock_cv2.COLOR_HSV2BGR = 54
-mock_cv2.ROTATE_90_COUNTERCLOCKWISE = 1
-mock_cv2.INTER_CUBIC = 2
-mock_cv2.INTER_AREA = 0
-mock_cv2.imread = lambda *a, **k: None
-mock_cv2.VideoCapture = lambda *a, **k: None
-mock_cv2.resize = lambda *a, **k: None
-mock_cv2.cvtColor = lambda *a, **k: None
-mock_cv2.calcOpticalFlowFarneback = lambda *a, **k: None
-mock_cv2.cartToPolar = lambda *a, **k: (None, None)
-mock_cv2.GaussianBlur = lambda *a, **k: None
-mock_cv2.addWeighted = lambda *a, **k: None
-mock_cv2.line = lambda *a, **k: None
-mock_cv2.imwrite = lambda *a, **k: None
-sys.modules["cv2"] = mock_cv2
 
-mock_numpy = types.ModuleType("numpy")
-mock_numpy.ndarray = type("ndarray", (), {})
-mock_numpy.ogrid = None
-mock_numpy.hypot = math.hypot
-mock_numpy.array = lambda *a, **k: None
-mock_numpy.mean = lambda *a, **k: 0
-mock_numpy.clip = lambda x, lo, hi: max(lo, min(hi, x))
-mock_numpy.sqrt = math.sqrt
-mock_numpy.pi = math.pi
-mock_numpy.sin = math.sin
-sys.modules["numpy"] = mock_numpy
+# ---------------------------------------------------------------------------
+# Mock heavy dependencies *before* importing clipper_core
+# ---------------------------------------------------------------------------
+import numpy as np  # numpy is fine to import for real — we only stub cv2/mp
 
-mock_mediapipe = types.ModuleType("mediapipe")
-sys.modules["mediapipe"] = mock_mediapipe
-sys.modules["mediapipe.tasks"] = types.ModuleType("mediapipe.tasks")
-sys.modules["mediapipe.tasks.python"] = types.ModuleType("mediapipe.tasks.python")
-sys.modules["mediapipe.tasks.python.vision"] = types.ModuleType("mediapipe.tasks.python.vision")
-sys.modules["mediapipe.tasks.python.core"] = types.ModuleType("mediapipe.tasks.python.core")
-sys.modules["mediapipe.tasks.python.vision"].FaceDetector = type("FaceDetector", (), {"create_from_options": staticmethod(lambda o: None)})
-sys.modules["mediapipe.tasks.python.vision"].RunningMode = type("RunningMode", (), {"IMAGE": 1})
-sys.modules["mediapipe.tasks.python.vision"].FaceDetectorOptions = lambda **k: None
-sys.modules["mediapipe.tasks.python.core"].base_options = types.ModuleType("base_options")
-sys.modules["mediapipe.tasks.python.core"].base_options.BaseOptions = lambda **k: None
+# cv2 stub — we need a few constants and the functions used by pure helpers
+class _Cv2Stub:
+    # constants
+    CAP_PROP_FPS = 5
+    CAP_PROP_FRAME_WIDTH = 3
+    CAP_PROP_FRAME_HEIGHT = 4
+    CAP_PROP_FRAME_COUNT = 7
+    COLOR_BGR2RGB = 4
+    COLOR_RGB2GRAY = 6
+    COLOR_BGR2LAB = 44
+    COLOR_LAB2BGR = 55
+    COLOR_BGR2HSV = 40
+    COLOR_HSV2BGR = 54
+    COLOR_RGB2BGR = 62
+    ROTATE_90_COUNTERCLOCKWISE = 1
+    INTER_CUBIC = 2
+    INTER_AREA = 0
 
-mock_ctk = types.ModuleType("customtkinter")
-mock_ctk.CTk = type("CTk", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkToplevel = type("CTkToplevel", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkFrame = type("CTkFrame", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkLabel = type("CTkLabel", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkEntry = type("CTkEntry", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkButton = type("CTkButton", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkComboBox = type("CTkComboBox", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkCheckBox = type("CTkCheckBox", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkSlider = type("CTkSlider", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkSegmentedButton = type("CTkSegmentedButton", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkTextbox = type("CTkTextbox", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkScrollableFrame = type("CTkScrollableFrame", (), {"__init__": lambda *a, **k: None})
-mock_ctk.CTkProgressBar = type("CTkProgressBar", (), {"__init__": lambda *a, **k: None})
-mock_ctk.StringVar = type("StringVar", (), {"__init__": lambda *a, **k: None, "get": lambda s: ""})
-mock_ctk.BooleanVar = type("BooleanVar", (), {"__init__": lambda *a, **k: None, "get": lambda s: False})
-mock_ctk.DoubleVar = type("DoubleVar", (), {"__init__": lambda *a, **k: None, "get": lambda s: 0.0})
-mock_ctk.set_appearance_mode = lambda *a: None
-mock_ctk.set_default_color_theme = lambda *a: None
-sys.modules["customtkinter"] = mock_ctk
+    def __getattr__(self, name):
+        # Any attribute/method referenced by clipper_core but not explicitly
+        # listed above becomes a no-op callable.  This keeps import-time and
+        # pure-function usage happy without a real OpenCV install.
+        return lambda *a, **k: None
 
-# Now import the actual functions we want to test
-# We'll import just the function definitions we need, bypassing GUI init
-import importlib
-import types as _types
+cv2 = _Cv2Stub()
 
-# Read the source file and extract just the functions we need
-source_path = os.path.join(os.path.dirname(__file__), "..", "clipper_gui_modern.py")
-with open(source_path, "r", encoding="utf-8") as f:
-    source_code = f.read()
+# mediapipe stub — only the bits clipper_core references at import time
+mp = types.ModuleType("mediapipe")
+mp.ImageFormat = type("ImageFormat", (), {"SRGB": 1})
+mp.Image = lambda *a, **k: None
+mp.__dict__["IMAGE_FORMAT"] = mp.ImageFormat
+mp_tasks = types.ModuleType("mediapipe.tasks")
+mp_tasks_python = types.ModuleType("mediapipe.tasks.python")
+mp_tasks_python_vision = types.ModuleType("mediapipe.tasks.python.vision")
+mp_core = types.ModuleType("mediapipe.tasks.python.core")
+mp_base = types.ModuleType("mediapipe.tasks.python.core.base_options")
+mp_base.BaseOptions = lambda **k: None
+mp_tasks_python_vision.FaceDetector = type(
+    "FaceDetector", (), {"create_from_options": staticmethod(lambda o: None)}
+)
+mp_tasks_python_vision.RunningMode = type("RunningMode", (), {"IMAGE": 1, "LIVE_STREAM": 2})
+mp_tasks_python_vision.FaceDetectorOptions = lambda **k: None
+# Wire submodules so `from mediapipe.tasks.python import vision, core` works
+mp_tasks_python.vision = mp_tasks_python_vision
+mp_tasks_python.core = mp_core
+mp_core.base_options = mp_base
 
-# Create a module to hold extracted functions
-test_module = _types.ModuleType("test_target")
-test_module.__dict__["__builtins__"] = __builtins__
+mp.tasks = mp_tasks
+mp.tasks.python = mp_tasks_python
+mp.tasks.python.vision = mp_tasks_python_vision
+mp.tasks.python.core = mp_core
 
-# Execute just the function definitions we need
-# We'll use exec with a minimal namespace
-exec_ns = {"__builtins__": __builtins__, "math": math, "re": __import__("re"), "os": os, "sys": sys}
-# Add mock objects
-exec_ns["cv2"] = mock_cv2
-exec_ns["np"] = mock_numpy
-exec_ns["mp"] = mock_mediapipe
-exec_ns["ctk"] = mock_ctk
-exec_ns["logging"] = __import__("logging")
+# PIL stub
+pil = types.ModuleType("PIL")
+pil_image_mod = types.ModuleType("PIL.Image")
+pil_Image = type("Image", (), {
+    "fromarray": staticmethod(lambda *a, **k: None),
+    "new": staticmethod(lambda *a, **k: None),
+    "alpha_composite": staticmethod(lambda *a, **k: None),
+    "Resampling": type("Resampling", (), {"LANCZOS": 1}),
+})
+pil_image_mod.Image = pil_Image
+pil_draw_mod = types.ModuleType("PIL.ImageDraw")
+pil_draw_mod.ImageDraw = type("ImageDraw", (), {"Draw": staticmethod(lambda *a, **k: None)})
+pil_font_mod = types.ModuleType("PIL.ImageFont")
+pil_font_mod.ImageFont = type("ImageFont", (), {
+    "truetype": staticmethod(lambda *a, **k: type("Font", (), {"path": "", "size": 65})()),
+    "load_default": staticmethod(lambda *a, **k: None),
+})
+pil.Image = pil_image_mod
+pil.ImageDraw = pil_draw_mod
+pil.ImageFont = pil_font_mod
 
-# Extract function definitions from source
-import re as _re
+# dotenv stub
+dotenv = types.ModuleType("dotenv")
+dotenv.load_dotenv = lambda *a, **k: None
 
-# KalmanFilter class
-kf_match = _re.search(r"class KalmanFilter:(.+?)(?=\n#|\nclass |\ndef )", source_code, _re.DOTALL)
-if kf_match:
-    exec(kf_match.group(0), exec_ns)
+# google.genai stub (optional — only imported if available)
+genai_stub = types.ModuleType("google.genai")
+genai_stub.Client = lambda **k: None
+google_stub = types.ModuleType("google")
+google_stub.genai = genai_stub
 
-# get_safe_id function
-gsid_match = _re.search(r"def get_safe_id\((.+?)(?=\ndef )", source_code, _re.DOTALL)
-if gsid_match:
-    exec(gsid_match.group(0), exec_ns)
+# Register all mocks
+sys.modules["cv2"] = cv2
+sys.modules["mediapipe"] = mp
+sys.modules["mediapipe.tasks"] = mp_tasks
+sys.modules["mediapipe.tasks.python"] = mp_tasks_python
+sys.modules["mediapipe.tasks.python.vision"] = mp_tasks_python_vision
+sys.modules["mediapipe.tasks.python.core"] = mp_core
+sys.modules["PIL"] = pil
+sys.modules["PIL.Image"] = pil_image_mod
+sys.modules["PIL.ImageDraw"] = pil_draw_mod
+sys.modules["PIL.ImageFont"] = pil_font_mod
+sys.modules["dotenv"] = dotenv
+sys.modules["google"] = google_stub
+sys.modules["google.genai"] = genai_stub
 
-# time_str_to_seconds function
-tss_match = _re.search(r"def time_str_to_seconds\((.+?)(?=\ndef )", source_code, _re.DOTALL)
-if tss_match:
-    exec(tss_match.group(0), exec_ns)
+# ---------------------------------------------------------------------------
+# Import the module under test (now that deps are stubbed)
+# ---------------------------------------------------------------------------
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_DIR)
 
-# SpeakerTracker class (just _match_face)
-st_match = _re.search(r"class SpeakerTracker:(.+?)(?=\nclass |\Z)", source_code, _re.DOTALL)
-if st_match:
-    exec(st_match.group(0), exec_ns)
-
-# compute_speech_segments
-css_match = _re.search(r"def compute_speech_segments\((.+?)(?=\ndef )", source_code, _re.DOTALL)
-if css_match:
-    exec(css_match.group(0), exec_ns)
-
-# detect_emphasis_words
-dew_match = _re.search(r"def detect_emphasis_words\((.+?)(?=\ndef )", source_code, _re.DOTALL)
-if dew_match:
-    exec(dew_match.group(0), exec_ns)
+from clipper_core import (  # noqa: E402
+    KalmanFilter,
+    get_safe_id,
+    time_str_to_seconds,
+    compute_speech_segments,
+    detect_emphasis_words,
+    SpeakerTracker,
+    FaceState,
+)
 
 
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 class TestKalmanFilter:
     def test_initial_estimate(self):
-        kf = exec_ns["KalmanFilter"]()
+        kf = KalmanFilter()
         assert kf.estimate == 0
 
     def test_update_converges_to_measurement(self):
-        kf = exec_ns["KalmanFilter"](process_noise=1e-5, measurement_noise=1e-2)
+        kf = KalmanFilter(process_noise=1e-5, measurement_noise=1e-2)
         # Feed constant measurement, estimate should converge
+        result = 0
         for _ in range(100):
             result = kf.update(10.0)
         assert abs(result - 10.0) < 0.1
 
     def test_smooth_noisy_measurements(self):
-        kf = exec_ns["KalmanFilter"](process_noise=1e-5, measurement_noise=1e-1)
+        kf = KalmanFilter(process_noise=1e-5, measurement_noise=1e-1)
         measurements = [5.0, 5.1, 4.9, 5.05, 4.95, 5.02]
         results = []
         for m in measurements:
@@ -162,93 +168,56 @@ class TestKalmanFilter:
 
 class TestGetSafeId:
     def test_standard_youtube_url(self):
-        gsid = exec_ns["get_safe_id"]
-        assert gsid("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        assert get_safe_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
 
     def test_shorts_url(self):
-        gsid = exec_ns["get_safe_id"]
-        assert gsid("https://youtube.com/shorts/abc123XYZ") == "abc123XYZ"
+        assert get_safe_id("https://youtube.com/shorts/abc123XYZ") == "abc123XYZ"
 
     def test_embed_url(self):
-        gsid = exec_ns["get_safe_id"]
-        assert gsid("https://youtube.com/embed/xyz789") == "xyz789"
+        assert get_safe_id("https://youtube.com/embed/xyz789") == "xyz789"
 
     def test_youtu_be_short(self):
-        gsid = exec_ns["get_safe_id"]
-        assert gsid("https://youtu.be/abc-123") == "abc123"
+        assert get_safe_id("https://youtu.be/abc-123") == "abc123"
 
     def test_invalid_url_returns_default(self):
-        gsid = exec_ns["get_safe_id"]
-        result = gsid("not a url at all")
+        result = get_safe_id("not a url at all")
         assert result == "video" or len(result) > 0
 
     def test_alphanumeric_only(self):
-        gsid = exec_ns["get_safe_id"]
-        result = gsid("https://youtube.com/watch?v=test_123-ABC")
+        result = get_safe_id("https://youtube.com/watch?v=test_123-ABC")
         assert result.isalnum()
 
 
 class TestTimeStrToSeconds:
     def test_hh_mm_ss(self):
-        tss = exec_ns["time_str_to_seconds"]
-        assert tss("01:30:00") == 5400.0
+        assert time_str_to_seconds("01:30:00") == 5400.0
 
     def test_mm_ss(self):
-        tss = exec_ns["time_str_to_seconds"]
-        assert tss("05:30") == 330.0
+        assert time_str_to_seconds("05:30") == 330.0
 
     def test_ss_only(self):
-        tss = exec_ns["time_str_to_seconds"]
-        assert tss("45") == 45.0
+        assert time_str_to_seconds("45") == 45.0
 
     def test_zero(self):
-        tss = exec_ns["time_str_to_seconds"]
-        assert tss("00:00:00") == 0.0
+        assert time_str_to_seconds("00:00:00") == 0.0
 
     def test_fallback_to_float(self):
-        tss = exec_ns["time_str_to_seconds"]
-        assert tss("3.14") == 3.14
+        assert time_str_to_seconds("3.14") == 3.14
 
 
 class TestSpeakerTrackerMatchFace:
     def setup_method(self):
-        self.tracker = exec_ns["SpeakerTracker"]()
+        self.tracker = SpeakerTracker()
 
     def test_no_faces_returns_none(self):
         assert self.tracker._match_face(100, 100, 50, 50) is None
 
     def test_match_close_face(self):
-        # Add a face first
-        exec_ns["FaceState"] = exec_ns.get("FaceState", type("FaceState", (), {
-            "__init__": lambda s, cx=0, cy=0, w=0, h=0, **kw: None
-        }))
-        from dataclasses import dataclass
-        @dataclass
-        class FaceState:
-            cx: float = 0.0
-            cy: float = 0.0
-            w: int = 0
-            h: int = 0
-            mouth_motion: float = 0.0
-            last_active_frame: int = -100
-            speaking: bool = False
-            smooth_motion: float = 0.0
         self.tracker.faces = [FaceState(cx=100, cy=100, w=50, h=50)]
         result = self.tracker._match_face(110, 110, 50, 50)
         assert result == 0
 
     def test_no_match_distant_face(self):
-        from dataclasses import dataclass
-        @dataclass
-        class FaceState:
-            cx: float = 0.0
-            cy: float = 0.0
-            w: int = 0
-            h: int = 0
-            mouth_motion: float = 0.0
-            last_active_frame: int = -100
-            speaking: bool = False
-            smooth_motion: float = 0.0
         self.tracker.faces = [FaceState(cx=100, cy=100, w=50, h=50)]
         result = self.tracker._match_face(500, 500, 50, 50)
         assert result is None
@@ -256,57 +225,51 @@ class TestSpeakerTrackerMatchFace:
 
 class TestComputeSpeechSegments:
     def test_empty_words(self):
-        css = exec_ns["compute_speech_segments"]
-        assert css([], 0.6) == []
+        assert compute_speech_segments([], 0.6) == []
 
     def test_single_word(self):
-        css = exec_ns["compute_speech_segments"]
         words = [{"start": 0.0, "end": 1.0, "text": "HELLO"}]
-        result = css(words, 0.6)
+        result = compute_speech_segments(words, 0.6)
         assert len(result) == 1
         assert result[0] == (0.0, 1.0)
 
     def test_consecutive_words_merge(self):
-        css = exec_ns["compute_speech_segments"]
         words = [
             {"start": 0.0, "end": 0.5, "text": "HELLO"},
             {"start": 0.6, "end": 1.0, "text": "WORLD"},
         ]
-        result = css(words, 0.6)
+        result = compute_speech_segments(words, 0.6)
         assert len(result) == 1
 
     def test_gap_splits_segments(self):
-        css = exec_ns["compute_speech_segments"]
         words = [
             {"start": 0.0, "end": 0.5, "text": "HELLO"},
             {"start": 1.5, "end": 2.0, "text": "WORLD"},
         ]
-        result = css(words, 0.6)
+        result = compute_speech_segments(words, 0.6)
         assert len(result) == 2
 
 
 class TestDetectEmphasisWords:
     def test_all_caps(self):
-        dew = exec_ns["detect_emphasis_words"]
         words = [{"text": "STOP"}, {"text": "the"}, {"text": "RUNNING"}]
-        result = dew(words)
+        result = detect_emphasis_words(words)
         assert 0 in result
         assert 2 in result
         assert 1 not in result
 
     def test_exclamation_mark(self):
-        dew = exec_ns["detect_emphasis_words"]
         words = [{"text": "Wow!"}, {"text": "normal"}]
-        result = dew(words)
+        result = detect_emphasis_words(words)
         assert 0 in result
         assert 1 not in result
 
     def test_known_keywords(self):
-        dew = exec_ns["detect_emphasis_words"]
         words = [{"text": "Never"}, {"text": "give"}, {"text": "up"}]
-        result = dew(words)
+        result = detect_emphasis_words(words)
         assert 0 in result  # "Never" is in emphasis_words set
 
 
 if __name__ == "__main__":
+    import pytest
     pytest.main([__file__, "-v"])
