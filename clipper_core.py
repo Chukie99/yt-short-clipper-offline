@@ -124,7 +124,7 @@ DEFAULT_CONFIG = {
     "whisper_provider": "Local (faster-whisper)",
     "whisper_model": "openai/whisper-1",
     "silence_threshold": 0.6,
-    # --- TTS (OptiClone + Edge-TTS + Voicebox) ---
+    # --- TTS (OptiClone only) ---
     "tts_provider": "auto",
     "tts_reference_path": "",
     "tts_edge_voice": "id-ID-ArdiNeural",
