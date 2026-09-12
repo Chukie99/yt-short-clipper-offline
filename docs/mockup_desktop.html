@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Desktop Mockup - Pastel</title>
+<style>
+  :root{--bg:#F6EDE6;--win:#FFFFFF;--line:#F0DDD2;--ink:#2B2D42;--muted:#8D99AE;--peach:#FFDAC1;--mint:#C8EDE0;--lilac:#E2D8F5;--navy:#2B2D42;--accent:#FF8A65}
+  *{box-sizing:border-box;font-family:Inter,Segoe UI,Roboto,Arial}
+  body{margin:0;background:var(--bg);display:grid;place-items:center;min-height:100vh;padding:24px}
+  .window{width:980px;max-width:100%;background:var(--win);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(43,45,66,.18)}
+  .titlebar{height:36px;background:#FFF7F0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 12px}
+  .dots{display:flex;gap:6px}
+  .dot{width:12px;height:12px;border-radius:50%;background:#FFDAC1;border:1px solid #E8C4B0}
+  .dot:nth-child(2){background:#C8EDE0}.dot:nth-child(3){background:#E2D8F5}
+  .title{margin-left:8px;font-size:13px;font-weight:700;color:var(--ink)}
+  .sub{margin-left:auto;font-size:11px;color:var(--muted)}
+  .body{display:grid;grid-template-columns:300px 1fr;min-height:520px}
+  .sidebar{background:#FFF7F0;border-right:1px solid var(--line);padding:16px}
+  .brand{display:flex;gap:10px;align-items:center}
+  .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--peach),var(--lilac));display:grid;place-items:center;border:1px solid var(--line)}
+  .brand b{font-size:14px}
+  .brand span{font-size:11px;color:var(--muted)}
+  .nav{margin-top:16px;display:grid;gap:6px}
+  .nav a{padding:10px 12px;border-radius:10px;border:1px solid transparent;text-decoration:none;color:var(--ink);font-size:13px;display:flex;justify-content:space-between}
+  .nav a.active{background:var(--navy);color:white}
+  .card{border:1px solid var(--line);border-radius:12px;padding:12px;background:white;margin-top:12px}
+  .card p{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
+  .main{padding:16px;background:var(--bg)}
+  .hero{background:white;border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;grid-template-columns:1fr 220px;gap:16px}
+  .hero h2{margin:0;font-size:18px}
+  .hero p{margin:6px 0 12px;color:var(--muted);font-size:13px;line-height:1.5}
+  .input{width:100%;border:1px solid var(--line);background:#FFF7F0;border-radius:10px;padding:10px 12px;font-size:13px}
+  .btn{border:0;border-radius:999px;padding:10px 14px;font-weight:700;cursor:pointer}
+  .btn-primary{background:var(--navy);color:white}
+  .btn-ghost{background:white;border:1px solid var(--line)}
+  .row{display:flex;gap:8px;margin-top:10px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:white;font-size:11px}
+  .chip.active{background:var(--navy);color:white;border-color:var(--navy)}
+  .phone{width:180px;height:320px;background:#111;border-radius:18px;border:5px solid #222;overflow:hidden;position:relative;margin:0 auto}
+  .phone img{width:100%;height:100%;object-fit:cover}
+  .cap{position:absolute;left:8px;right:8px;bottom:12px;background:rgba(255,255,255,.96);border-radius:10px;padding:8px;text-align:center;font-weight:800;font-size:11px;border:1px solid var(--line)}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+  .step{background:white;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+  .step b{font-size:13px}
+  .step span{font-size:11px;color:var(--muted)}
+  .queue{margin-top:12px;background:white;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .queue h4{margin:0;padding:12px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);letter-spacing:.3px}
+  .item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #F6EDE6}
+  .item:last-child{border:0}
+  .thumb{width:64px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--peach),var(--mint));border:1px solid var(--line)}
+  .meta b{font-size:13px}
+  .meta span{font-size:11px;color:var(--muted)}
+  .check{margin-left:auto;width:18px;height:18px;border-radius:6px;border:1.5px solid var(--line);display:grid;place-items:center}
+  .foot{padding:10px 14px;display:flex;gap:8px}
+  @media(max-width:900px){.body{grid-template-columns:1fr}.hero{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar">
+    <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="title">YT Short Clipper — v3.1 Pastel</div>
+    <div class="sub">Desktop • Windows 10/11 • Offline</div>
+  </div>
+  <div class="body">
+    <div class="sidebar">
+      <div class="brand"><div class="logo">✂️</div><div><b>YT Short Clipper</b><br/><span>Pastel • Easy Use</span></div></div>
+      <div class="nav">
+        <a class="active" href="#">🏠 Beranda <span>●</span></a>
+        <a href="#">✂️ Clipper</a>
+        <a href="#">⚙️ Settings</a>
+        <a href="#">📁 Output</a>
+      </div>
+      <div class="card">
+        <b style="font-size:13px">3 Langkah Jadi</b>
+        <p>1. Paste link<br/>2. Centang segmen viral<br/>3. Proses — file di output/</p>
+      </div>
+      <div class="card" style="background:#FFF7F0">
+        <b style="font-size:12px">Quality</b>
+        <p>Draft (cepat) • Normal • High (kualitas)</p>
+      </div>
+    </div>
+    <div class="main">
+      <div class="hero">
+        <div>
+          <h2>Paste link YouTube, jadi Shorts 9:16</h2>
+          <p>AI cari hook 45–75 detik, auto face-tracking, subtitle karaoke. Default langsung jalan — gak perlu setting.</p>
+          <input class="input" placeholder="https://youtube.com/watch?v=..."/>
+          <div class="row">
+            <button class="btn btn-primary">▶ Ambil & Analisis</button>
+            <button class="btn btn-ghost">Bantuan</button>
+          </div>
+          <div class="chips">
+            <span class="chip active">Cinematic</span><span class="chip">Clean</span><span class="chip">Bold</span><span class="chip">Story</span>
+            <span class="chip">1080×1920</span><span class="chip">Karaoke ON</span><span class="chip">BGM 15%</span>
+          </div>
+        </div>
+        <div class="phone"><img src="https://picsum.photos/seed/pastel/360/640"/><div class="cap">STOP OVERTHINKING!<div style="font-weight:400;color:#666;margin-top:3px">subtitle bounce • tracking</div></div></div>
+      </div>
+      <div class="steps">
+        <div class="step"><b>1. Paste</b><br/><span>Tempel link</span></div>
+        <div class="step"><b>2. AI Pilih</b><br/><span>Skor ≥7</span></div>
+        <div class="step"><b>3. Export</b><br/><span>1080×1920</span></div>
+      </div>
+      <div class="queue">
+        <h4>HASIL AI — CENTANG YANG MAU DI-PROSES (contoh)</h4>
+        <div class="item"><div class="thumb"></div><div class="meta"><b>Kenapa Kamu Overthinking?</b><br/><span>00:12–01:08 • 56 detik • hook: “Otakmu bukan musuh…” • mood: inspirasi</span></div><div class="check">☐</div></div>
+        <div class="item"><div class="thumb" style="background:linear-gradient(135deg,var(--lilac),var(--peach))"></div><div class="meta"><b>3 Kebiasaan Bikin Cemas</b><br/><span>02:10–03:05 • 55 detik • split-screen off</span></div><div class="check" style="background:var(--navy);color:white;border-color:var(--navy)">☑</div></div>
+        <div class="foot"><button class="btn btn-primary">⚡ Proses Terpilih (1)</button><button class="btn btn-ghost">Preview</button><span style="margin-left:auto;font-size:11px;color:var(--muted);align-self:center">ETA ~1–3 menit • output/</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

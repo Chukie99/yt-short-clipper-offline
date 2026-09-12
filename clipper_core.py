@@ -257,14 +257,18 @@ def load_config():
                 content = f.read().strip()
                 if content:
                     file_config = json.loads(content)
+                    # ignore empty strings from old config — fall back to env/default
+                    for k, v in list(file_config.items()):
+                        if isinstance(v, str) and v.strip() == "":
+                            file_config.pop(k)
                     config.update(file_config)
         except (json.JSONDecodeError, IOError):
             pass
-    if not config.get("gemini_api_key"):
+    if not (config.get("gemini_api_key") or "").strip():
         config["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
-    if not config.get("openrouter_api_key"):
+    if not (config.get("openrouter_api_key") or "").strip():
         config["openrouter_api_key"] = os.environ.get("OPENROUTER_API_KEY", "")
-    if not config.get("groq_api_key"):
+    if not (config.get("groq_api_key") or "").strip():
         config["groq_api_key"] = os.environ.get("GROQ_API_KEY", "")
     return config
 
@@ -335,7 +339,9 @@ def save_queue_state(segments, config):
         "end_card": config.get("end_card", True),
         "end_card_text": config.get("end_card_text", "Follow for more!"),
     }
-    QUEUE_STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp = QUEUE_STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(QUEUE_STATE_FILE)
 
 def load_queue_state():
     if not QUEUE_STATE_FILE.exists():
@@ -389,8 +395,12 @@ def add_subtitle_animation(draw, text, font, x, y, fill, outline_w, frame_num, f
         draw.text((x, y), text, font=anim_font, fill=(*inactive_c, inactive_a), stroke_width=outline_w // 2, stroke_fill=(0, 0, 0, inactive_a // 2))
 
 def run_cmd(cmd, log_func=None):
+    """Run command safely. Accepts list (shell=False) or string (shell=True for legacy)."""
     try:
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
+        if isinstance(cmd, (list, tuple)):
+            process = subprocess.Popen(list(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
+        else:
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
         output = []
         if process.stdout:
             for line in process.stdout:
@@ -409,6 +419,18 @@ def run_cmd(cmd, log_func=None):
     except Exception as e:
         logger.error("run_cmd failed: %s", e)
         raise Exception(str(e)) from e
+
+
+def _valid_youtube_url(url: str) -> bool:
+    """Basic guard against command injection — allow only http(s) youtube links."""
+    if not isinstance(url, str): return False
+    u = url.strip()
+    if not u.startswith("http://") and not u.startswith("https://"): return False
+    if len(u) > 2048: return False
+    # block shell metachars that have no business in a URL
+    if any(c in u for c in [";", "&", "|", "`", "$", "\n", "\r"]):
+        return False
+    return True
 
 def safe_generate_content(config, contents, log_func=None):
     provider = config.get("ai_provider", "Gemini (Native)")
@@ -500,11 +522,12 @@ def ensure_bgm(mood, log_func, config=None):
         "santai": "Chill lofi background music no copyright"
     }
     query = search_map.get(mood.lower(), "Chill background music no copyright")
-    log_func(f"[🎵] Fallback: Mencari backsound di YouTube (beresiko copyright claim!)...")
-    ytdlp_path = get_ytdlp_path()
+    log_func(f"[⚠️] BGM YouTube fallback beresiko copyright! Kosongkan Pexels key = pakai file lokal backsound/*.mp3 saja.")
+    log_func(f"[🎵] Fallback: Mencari backsound di YouTube (ytsearch1 — lisensi tidak dijamin!)...")
+    raw_ytdlp2 = get_ytdlp_path().strip().strip('"').strip("'")
     try:
-        cmd = f'{ytdlp_path} --no-update --user-agent "{UA}" --match-filter "duration < 300" --extract-audio --audio-format mp3 --output "{bgm_path}" "ytsearch1:{query}"'
-        subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        cmd2 = [raw_ytdlp2, "--no-update", "--user-agent", UA, "--match-filter", "duration < 300", "--extract-audio", "--audio-format", "mp3", "--output", str(bgm_path), f"ytsearch1:{query}"]
+        subprocess.run(cmd2, capture_output=True, text=True)
         if bgm_path.exists():
             log_func(f"[✅] Backsound {mood} berhasil di-download (⚠️ lisensi tidak dijamin).")
             return bgm_path
@@ -796,19 +819,31 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
         '--extractor-args "youtube:player_client=tv,mediaconnect" -f "bestvideo+bestaudio/best"',
     ]
 
+    if not _valid_youtube_url(link):
+        raise Exception("❌ Link tidak valid. Harus http(s) YouTube URL.")
+    raw_ytdlp = ytdlp_path.strip().strip('"').strip("'")
+    ytdlp_exe = raw_ytdlp
+
     strategies = []
 
-    # ALWAYS use cookies if available
     cp = cookies_path
+    base_args = ["--user-agent", UA, "--no-update", "--retries", "10", "--extractor-retries", "infinite", "--merge-output-format", "mp4"]
     if cp and Path(cp).exists():
         log_func(f"[🍪] Using cookies: {cp}")
-        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4 --cookies "{cp}"'
+        base_args += ["--cookies", str(cp)]
     else:
-        log_func("[⚠️] No cookies file found, download may fail")
-        base_cmd = f'{ytdlp_path} --user-agent "{UA}" --no-update --retries 10 --extractor-retries infinite --merge-output-format mp4'
+        log_func("[⚠️] No cookies file found, download may fail — isi cookies.txt di Settings biar gak kena 'Sign in to confirm'")
 
-    for fmt in format_variants:
-        strategies.append(f'{base_cmd} {fmt} -o "{output_path}" "{link}"')
+    # format_variants as list-args
+    fmt_args_list = [
+        ["--extractor-args", "youtube:player_client=android_vr", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"],
+        ["--extractor-args", "youtube:player_client=tv,web_creator,mediaconnect", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"],
+        ["--extractor-args", "youtube:player_client=mediaconnect", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"],
+        ["--extractor-args", "youtube:player_client=android_vr", "-f", "best"],
+        ["--extractor-args", "youtube:player_client=tv,mediaconnect", "-f", "bestvideo+bestaudio/best"],
+    ]
+    for fmt_args in fmt_args_list:
+        strategies.append([ytdlp_exe] + base_args + fmt_args + ["-o", str(output_path), link])
 
     for i, cmd in enumerate(strategies[:max_retries], 1):
         try:
@@ -838,8 +873,8 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
 
 def get_audio_duration(file_path):
     try:
-        cmd = f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{file_path}"'
-        result = subprocess.check_output(cmd, shell=True).decode("utf-8").strip()
+        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(file_path)]
+        result = subprocess.check_output(cmd).decode("utf-8").strip()
         return float(result)
     except (subprocess.CalledProcessError, ValueError, FileNotFoundError, OSError) as e:
         logger.debug("get_audio_duration fallback for '%s': %s", file_path, e)
@@ -1092,13 +1127,13 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
         log_func(f"[{safe_id}] ✂️  Memotong segmen...")
         progress_func(15)
         dur = end_sec - start_sec
-        ffmpeg_cmd = get_ffmpeg_path()
-        run_cmd(f'{ffmpeg_cmd} -y -ss {start_sec} -i "{original}" -t {dur} -c:v libx264 -crf 18 -c:a aac "{trimmed}"')
+        ffmpeg_exe = get_ffmpeg_path().strip().strip('"').strip("'")
+        run_cmd([ffmpeg_exe, "-y", "-ss", str(start_sec), "-i", str(original), "-t", str(dur), "-c:v", "libx264", "-crf", "18", "-c:a", "aac", str(trimmed)])
 
         update_status("Audio Ext...")
         log_func(f"[{safe_id}] 🔊 Ekstrak audio...")
         progress_func(20)
-        run_cmd(f'{ffmpeg_cmd} -y -i "{trimmed}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{audio_wav}"')
+        run_cmd([ffmpeg_exe, "-y", "-i", str(trimmed), "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(audio_wav)])
 
         update_status("Transcribing...")
         log_func(f"[{safe_id}] 📝 Transkripsi ({model_size})...")
@@ -1366,9 +1401,8 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
         try:
             ffmpeg_proc = subprocess.Popen(ffmpeg_cmd_list, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
         except (OSError, ValueError) as e:
-            logger.warning("ffmpeg Popen list form failed, falling back to shell: %s", e)
-            shell_cmd = ' '.join(str(x) if not any(c in str(x) for c in ' ;()') else f'"{str(x)}"' for x in ffmpeg_cmd_list)
-            ffmpeg_proc = subprocess.Popen(shell_cmd, shell=True, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            logger.error("ffmpeg Popen failed, aborting: %s", e)
+            raise Exception(f"❌ FFmpeg gagal dijalankan: {e}") from e
 
         import queue as qmod
         ff_err_q = qmod.Queue()
