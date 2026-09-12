@@ -36,7 +36,6 @@ def build():
         '--collect-all=customtkinter',
         '--collect-all=faster_whisper',
         '--collect-all=pykakasi',
-        '--hidden-import=edge_tts',
         '--hidden-import=clipper_tts',
         '--clean',
         script_name

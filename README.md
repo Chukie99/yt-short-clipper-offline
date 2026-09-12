@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎬 YT Short Clipper Pro
+# yt-short-clipper-offline
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb)
 
@@ -48,7 +48,7 @@ Mockup desktop: `docs/mockup_desktop.html` — PRD lengkap: `docs/PRD_Pastel_Eas
 | 🎬 **4 Template** | Cinematic, Clean, Bold, Story |
 | 🖼️ **B-Roll** | Overlay visual dari Pexels (sesuai konten) |
 | 🎵 **BGM** | Auto backsound lokal `backsound/` + warning kalau fallback YouTube |
-| 🎤 **Voice Hook** | Voice over pembuka via Voicebox (port 17493) atau MP3 manual + slider 0.5-5s |
+| 🎤 **Voice Hook** | Voice over pembuka via **OptiClone** (clone 3s) otomatis, atau MP3 manual + slider 0.5-5s |
 | 📐 **Split Screen** | 2+ pembicara sekaligus |
 | 🏷️ **Watermark/Logo** | Pill background, posisi custom |
 | 📊 **ETA + Log** | Progress + sisa waktu render |
@@ -95,7 +95,7 @@ Dapatkan key gratis: [OpenRouter](https://openrouter.ai/keys) · [Groq](https://
 
 **YouTube Cookies (biar download gak gagal):** Install extension "Get cookies.txt" → buka YouTube login → Export → simpan `.txt` → atur path di Settings.
 
-**Voice Hook (opsional):** Jalankan [Voicebox](https://github.com/Chukie99/voicebox) di port `17493` → buat voice profile → AI auto-generate, atau upload MP3 manual.
+**Voice Hook (opsional):** Taruh file ref 3 detik di `Settings` → OptiClone auto clone suara → AI auto-generate, atau upload MP3 manual. (tanpa ref → fallback Voicebox `127.0.0.1:17493` kalau ada)
 
 ---
 
@@ -127,10 +127,10 @@ Python 3.8+ · FFmpeg · yt-dlp · faster-whisper · MediaPipe · OpenCV · Cust
 ## 📝 Changelog
 
 ### v1.1.0 (2026-09-12) — Voice Hook TTS inside + Engine FFmpeg inside
-- 🎤 **Voice Hook TTS di dalem:** AI bikin naskah `voice_hook_script` → langsung jadi suara otomatis (Edge-TTS `id-ID` gratis di dalem, OptiClone 3s clone kalau user taro ref wav — semua via `tts_generate_hook()`, lazy, gak perlu Voicebox)
+- 🎤 **Voice Hook TTS di dalem:** AI bikin naskah `voice_hook_script` → langsung jadi suara otomatis via **OptiClone (LuxTTS)** — 3 detik ref wav clone suara sendiri, 48kHz, 150× realtime, <1GB VRAM. Fallback Voicebox legacy kalau belum install OptiClone (`tts_generate_hook()` lazy)
 - 🎞️ **Engine video di dalem:** eksekusi video pakai FFmpeg internal (42 tools, bundled `skills/ffmpeg-skill` — probe/cut/fit 9:16/caption/export/loudness) + face tracking Kalman & karaoke PIL tetap jalan, `build_exe` sudah bundle
-- ⚙️ **Easy Use:** Settings gak usah pusing TTS — jalan otomatis `auto`, canggihnya di dalem aja
-- 📦 **Deps:** `edge-tts>=6.1.0` di `requirements.txt` (ringan), `requirements-tts-opticlone.txt` terpisah kalau mau clone (5-10GB HF cache)
+- ⚙️ **Easy Use:** TTS jalan otomatis di dalem, gak perlu setting
+- 📦 **Deps:** OptiClone terpisah `requirements-tts-opticlone.txt` (5-10GB HF cache first run), core ringan tanpa edge-tts
 
 ### v1.0.0 (2026-09-12) — Renew Pastel & Easy Use
 - 🎨 **UI:** Reskin full pastel (cream/peach/mint/lilac/navy), light mode, layout 3 langkah
@@ -157,7 +157,7 @@ MIT — bebas personal & komersial.
 
 <div align="center">
 
-**Made with ❤️ for creators — v1.1.0 Pastel + OptiClone**
+**Made with ❤️ for creators — v1.1.0**
 
 [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues) · [Request Feature](https://github.com/Chukie99/yt-short-clipper-offline/issues)
 
