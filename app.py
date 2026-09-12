@@ -130,7 +130,7 @@ def setup_ngrok(authtoken, port=8501):
 # ============================================================
 def render_sidebar():
     with st.sidebar:
-        st.image("https://img.shields.io/badge/YT_Short_Clipper-v1.0.0-blue?style=for-the-badge", use_container_width=True)
+        st.image("https://img.shields.io/badge/YT_Short_Clipper-v1.1.0-blue?style=for-the-badge", use_container_width=True)
         st.markdown("---")
 
         # --- Ngrok ---

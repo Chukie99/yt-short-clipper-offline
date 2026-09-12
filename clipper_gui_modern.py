@@ -12,7 +12,7 @@ from clipper_core import (
     load_config, save_config, check_dependencies, list_available_fonts,
     get_safe_id, save_queue_state, load_queue_state, clear_queue_state,
     safe_generate_content, download_youtube, process_single_video,
-    voicebox_generate, draw_pro_text, draw_karaoke_line, draw_end_card,
+    voicebox_generate, tts_generate_hook, draw_pro_text, draw_karaoke_line, draw_end_card,
     apply_vignette, apply_cinematic_grade, render_grid_layout,
     compute_speech_segments, is_in_speech_segment, detect_emphasis_words,
     detect_whisper_device, apply_sharpen, get_audio_duration,
@@ -42,7 +42,7 @@ from PIL import Image as PILImage, ImageDraw, ImageFont
 
 class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, config, on_save):
-        super().__init__(parent); self.title("Settings"); self.geometry("620x950"); self.config = config; self.on_save = on_save
+        super().__init__(parent); self.title("Settings"); self.geometry("620x1080"); self.config = config; self.on_save = on_save
         self.configure(fg_color="#FFF7F0")
         self.grid_columnconfigure(1, weight=1); r = 0
         ctk.CTkLabel(self, text="AI Provider:", font=("Arial", 14, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w")
@@ -66,6 +66,13 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Watermark:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.w_var = ctk.StringVar(value=config.get("watermark", "")); ctk.CTkEntry(self, textvariable=self.w_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Pexels API Key:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.pk_var = ctk.StringVar(value=config.get("pexels_api_key", "")); ctk.CTkEntry(self, textvariable=self.pk_var, width=300, corner_radius=8, show="*").grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="BGM Volume:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.bv_var = ctk.DoubleVar(value=config.get("bgm_volume", 0.15)); ctk.CTkSlider(self, from_=0, to=1, variable=self.bv_var, width=300).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
+        # --- TTS (OptiClone / Edge-TTS / Voicebox) ---
+        ctk.CTkLabel(self, text="TTS Provider:", font=("Arial", 13, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=(15,5), sticky="w"); self.tts_var = ctk.StringVar(value=config.get("tts_provider", "auto")); ctk.CTkComboBox(self, values=["auto", "edge", "opticlone", "voicebox"], variable=self.tts_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=(15,5), sticky="ew"); r+=1
+        ctk.CTkLabel(self, text="Edge Voice:", text_color="#8D99AE").grid(row=r, column=0, padx=20, pady=5, sticky="w"); self.edge_var = ctk.StringVar(value=config.get("tts_edge_voice", "id-ID-ArdiNeural")); ctk.CTkComboBox(self, values=["id-ID-ArdiNeural", "id-ID-GadisNeural", "en-US-AriaNeural", "en-US-GuyNeural"], variable=self.edge_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=5, sticky="ew"); r+=1
+        ctk.CTkLabel(self, text="TTS Ref (3s wav):", text_color="#8D99AE").grid(row=r, column=0, padx=20, pady=5, sticky="w"); self.ref_var = ctk.StringVar(value=config.get("tts_reference_path", ""))
+        f_ref = ctk.CTkFrame(self, fg_color="transparent"); f_ref.grid(row=r, column=1, padx=20, pady=5, sticky="ew"); f_ref.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_ref, textvariable=self.ref_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_ref, text="📁", width=50, command=self.browse_tts_ref, fg_color="#F0DDD2", text_color="#2B2D42", corner_radius=8).grid(row=0, column=1); r+=1
+        ctk.CTkLabel(self, text="OptiClone Steps/Speed:", text_color="#8D99AE").grid(row=r, column=0, padx=20, pady=5, sticky="w")
+        f_opt = ctk.CTkFrame(self, fg_color="transparent"); f_opt.grid(row=r, column=1, padx=20, pady=5, sticky="ew"); self.steps_var = ctk.StringVar(value=str(config.get("opticlone_steps", 4))); self.speed_var = ctk.StringVar(value=str(config.get("opticlone_speed", 1.0))); ctk.CTkEntry(f_opt, textvariable=self.steps_var, width=70, corner_radius=8, placeholder_text="steps").pack(side="left", padx=2); ctk.CTkEntry(f_opt, textvariable=self.speed_var, width=70, corner_radius=8, placeholder_text="speed").pack(side="left", padx=2); ctk.CTkLabel(f_opt, text="(4 & 1.0 default)", text_color="#8D99AE").pack(side="left", padx=5); r+=1
         ctk.CTkLabel(self, text="Logo:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.l_var = ctk.StringVar(value=config.get("logo_path", "")); f_l = ctk.CTkFrame(self, fg_color="transparent"); f_l.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_l.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_l, textvariable=self.l_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_l, text="🖼️", width=50, command=self.browse_logo, fg_color="#F0DDD2", corner_radius=8).grid(row=0, column=1); r += 1
         ctk.CTkLabel(self, text="Font:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w");         self.f_opts = list_available_fonts(); self.f_var = ctk.StringVar(value=config.get("subtitle_font", "KOMIKAX_.ttf")); ctk.CTkComboBox(self, values=self.f_opts, variable=self.f_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Render Quality:", font=("Arial", 14, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w")
@@ -96,6 +103,9 @@ class SettingsDialog(ctk.CTkToplevel):
         if c == "Gemini (Native)": self.g_f.grid()
         elif c == "Groq": self.gr_f.grid()
         else: self.o_f.grid()
+    def browse_tts_ref(self):
+        p = filedialog.askopenfilename(filetypes=[("Audio", "*.wav *.mp3 *.m4a")])
+        if p: self.ref_var.set(p)
     def browse_logo(self):
         p = filedialog.askopenfilename(filetypes=[("Image", "*.png *.jpg *.jpeg"), ("PNG", "*.png"), ("JPEG", "*.jpg *.jpeg")])
         if p: self.l_var.set(p)
@@ -145,7 +155,7 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("Test API", f"❌ Gagal: {e}")
         threading.Thread(target=_t, daemon=True).start()
     def save(self):
-        nc = {"ai_provider": self.p_var.get(), "gemini_api_key": self.gk_var.get().strip(), "gemini_model": self.gm_var.get(), "openrouter_api_key": self.ok_var.get().strip(), "openrouter_model": self.om_var.get().strip(), "groq_api_key": self.grk_var.get().strip(), "groq_model": self.grm_var.get().strip(), "pexels_api_key": self.pk_var.get().strip(), "cookies_path": self.c_var.get().strip(), "watermark": self.w_var.get().strip(), "subtitle_font": self.f_var.get(), "logo_path": self.l_var.get().strip(), "bgm_volume": self.bv_var.get(), "render_quality": self.rq_var.get(), "template": self.tpl_var.get(), "export_resolution": self.er_var.get(), "end_card": self.ec_var.get(), "end_card_text": self.ec_text_var.get().strip(), "whisper_provider": self.wp_var.get(), "whisper_model": self.wm_var.get().strip(), "silence_threshold": self.st_var.get()}
+        nc = {"ai_provider": self.p_var.get(), "gemini_api_key": self.gk_var.get().strip(), "gemini_model": self.gm_var.get(), "openrouter_api_key": self.ok_var.get().strip(), "openrouter_model": self.om_var.get().strip(), "groq_api_key": self.grk_var.get().strip(), "groq_model": self.grm_var.get().strip(), "pexels_api_key": self.pk_var.get().strip(), "cookies_path": self.c_var.get().strip(), "watermark": self.w_var.get().strip(), "subtitle_font": self.f_var.get(), "logo_path": self.l_var.get().strip(), "bgm_volume": self.bv_var.get(), "render_quality": self.rq_var.get(), "template": self.tpl_var.get(), "export_resolution": self.er_var.get(), "end_card": self.ec_var.get(), "end_card_text": self.ec_text_var.get().strip(), "whisper_provider": self.wp_var.get(), "whisper_model": self.wm_var.get().strip(), "silence_threshold": self.st_var.get(), "tts_provider": self.tts_var.get(), "tts_edge_voice": self.edge_var.get(), "tts_reference_path": self.ref_var.get().strip(), "opticlone_steps": int(self.steps_var.get() or 4), "opticlone_speed": float(self.speed_var.get() or 1.0)}
         self.on_save(nc); self.destroy()
 
 class VideoItem(ctk.CTkFrame):
@@ -261,7 +271,7 @@ class VideoItem(ctk.CTkFrame):
                     if vhs:
                         hook_path = TEMP_DIR / f"voicehook_{int(time.time())}.mp3"
                         self.log_func(f"\n🎤=== VOICE HOOK SCRIPT ===\n{vhs}\n==========================")
-                        if voicebox_generate(vhs, hook_path, self.log_func):
+                        if tts_generate_hook(vhs, hook_path, config=self.config, log_func=self.log_func):
                             self.vh_var.set(str(hook_path))
                             self.log_func(f"[✅] Voice hook generated -> {hook_path.name}")
                         else:
@@ -270,14 +280,14 @@ class VideoItem(ctk.CTkFrame):
 
 class App(ctk.CTk):
     def __init__(self):
-        super().__init__(); self.title("YT Short Clipper v1.0.0"); self.geometry("1100x850"); 
+        super().__init__(); self.title("YT Short Clipper v1.1.0"); self.geometry("1100x850"); 
         ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
         de = check_dependencies(); self.dependency_failed = len(de) > 0
         self.config = load_config(); self.v_items = []; self.proc = False; self.proc_lock = threading.Lock()
         self.grid_columnconfigure(0, weight=1); [self.grid_rowconfigure(i, weight=0) for i in range(6)]; self.grid_rowconfigure(6, weight=1)
         m = ctk.CTkFrame(self, height=40, fg_color="#FFF7F0", corner_radius=0); m.grid(row=0, column=0, sticky="ew"); m.grid_columnconfigure(0, weight=1)
         ctk.CTkButton(m, text="⚙️ Settings", command=self.open_settings, fg_color="transparent", hover_color="#F0DDD2").pack(side="left", padx=10, pady=5)
-        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v1.0.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
+        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v1.1.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
         ctk.CTkLabel(self, text="YT Shorts Clipper Pro", font=("Arial", 26, "bold"), text_color="#fff").grid(row=1, column=0, pady=15)
         f_l = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10); f_l.grid(row=2, column=0, padx=30, pady=5, sticky="ew"); f_l.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(f_l, text="🎬 Link YouTube:", font=("Arial", 14, "bold"), text_color="#2B2D42").pack(side="left", padx=(15,10), pady=10)
@@ -422,7 +432,7 @@ class App(ctk.CTk):
             if vhs:
                 hook_path = TEMP_DIR / f"voicehook_{int(time.time())}.mp3"
                 self.log(f"\n🎤=== VOICE HOOK SCRIPT ===\n{vhs}\n==========================")
-                if voicebox_generate(vhs, hook_path, self.log):
+                if tts_generate_hook(vhs, hook_path, config=self.config, log_func=self.log):
                     it.vh_var.set(str(hook_path))
                     self.log(f"[✅] Voice hook generated -> {hook_path.name}")
                 else:

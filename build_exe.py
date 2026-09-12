@@ -19,19 +19,26 @@ def build():
     fonts_path = base_path / "fonts"
     bin_path = base_path / "bin"
     
+    vendor_opticlone = base_path / "vendor" / "opticlone"
+    skills_ffmpeg = base_path / "skills" / "ffmpeg-skill"
+    docs_ffmpeg = base_path / "docs" / "FFMPEG_SKILL.md"
     # Kumpulkan parameter build
     params = [
         'pyinstaller',
         '--noconfirm',
-        '--onedir', # Berubah ke folder agar jauh lebih cepat dan stabil
+        '--onedir', # Folder agar cepat & stabil
         '--windowed',
         f'--name={exe_name}',
         f'--add-data={str(fonts_path)};fonts',
         f'--add-data={str(bin_path)};bin',
+        f'--add-data={str(vendor_opticlone)};vendor/opticlone',
+        f'--add-data={str(skills_ffmpeg)};skills/ffmpeg-skill',
         '--collect-all=customtkinter',
         '--collect-all=faster_whisper',
         '--collect-all=pykakasi',
-        '--clean', # Bersihkan cache lama
+        '--hidden-import=edge_tts',
+        '--hidden-import=clipper_tts',
+        '--clean',
         script_name
     ]
 

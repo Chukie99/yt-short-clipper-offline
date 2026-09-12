@@ -27,3 +27,11 @@ error.log
 # Internal
 .mimocode/
 API openrouter.txt
+# OptiClone large models (5-10GB) — jangan commit
+vendor/opticlone/models/
+vendor/opticlone/.cache/
+.opticlone.log
+*.safetensors
+# HF cache
+.cache/huggingface/
+

@@ -124,6 +124,12 @@ DEFAULT_CONFIG = {
     "whisper_provider": "Local (faster-whisper)",
     "whisper_model": "openai/whisper-1",
     "silence_threshold": 0.6,
+    # --- TTS (OptiClone + Edge-TTS + Voicebox) ---
+    "tts_provider": "auto",
+    "tts_reference_path": "",
+    "tts_edge_voice": "id-ID-ArdiNeural",
+    "opticlone_steps": 4,
+    "opticlone_speed": 1.0,
 }
 
 RENDER_PRESETS = {
@@ -934,6 +940,26 @@ def voicebox_generate(text: str, output_path: Path, log_func=None) -> bool:
         if log_func:
             log_func(f"[🎤] Voicebox error: {str(e)[:100]}")
         return False
+
+def tts_generate_hook(text: str, output_path: Path, config: dict | None = None, log_func=None) -> bool:
+    """Unified TTS: OptiClone (3s clone) -> Edge-TTS (id-ID gratis) -> Voicebox. Lazy import, no hard dep."""
+    cfg = config or {}
+    # 1) Try OptiClone/Edge via clipper_tts.py (lazy, no crash if deps missing)
+    try:
+        import importlib.util
+        tts_path = Path(__file__).parent / "clipper_tts.py"
+        if tts_path.exists():
+            spec = importlib.util.spec_from_file_location("clipper_tts", str(tts_path))
+            mod = importlib.util.module_from_spec(spec)  # type: ignore
+            assert spec and spec.loader
+            spec.loader.exec_module(mod)  # type: ignore
+            if mod.tts_generate(text, output_path, config=cfg, log_func=log_func):
+                return True
+    except Exception as e:
+        if log_func:
+            log_func(f"[TTS] clipper_tts fallback: {e}")
+    # 2) Voicebox legacy
+    return voicebox_generate(text, output_path, log_func=log_func)
 
 class KalmanFilter:
     """1D Kalman filter for smoothing face-tracking coordinates.

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎬 YT Short Clipper — v1.0.0 *Pastel & Easy Use*
+# 🎬 YT Short Clipper — v1.1.0 *OptiClone + FFmpeg Skill*
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb)
 
@@ -8,7 +8,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)](https://python.org)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-required-green?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-FFDAC1?style=for-the-badge)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-FFDAC1?style=for-the-badge)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chuckie999)
 
@@ -126,6 +126,12 @@ Python 3.8+ · FFmpeg · yt-dlp · faster-whisper · MediaPipe · OpenCV · Cust
 
 ## 📝 Changelog
 
+### v1.1.0 (2026-09-12) — OptiClone Voice Clone + FFmpeg Skill
+- 🎤 **TTS Unified:** `clipper_tts.py` — chain **OptiClone (LuxTTS 3s clone, 48kHz, 150× realtime, <1GB VRAM)** → **Edge-TTS** gratis `id-ID-ArdiNeural/GadisNeural` → Voicebox legacy. `tts_generate_hook()` lazy import, no hard dep
+- ⚙️ **Settings TTS:** Provider auto/edge/opticlone/voicebox + Edge voice picker + Ref wav 3 detik + Steps/Speed OptiClone, `🔍 Test API` tetap ada
+- 🎞️ **FFmpeg Skill:** bundled `skills/ffmpeg-skill` (kajisho5, 42 tools) + `docs/FFMPEG_SKILL.md` helper, `build_exe.py` bundle vendor/opticlone + skills
+- 📦 **Deps:** `requirements.txt` + `edge-tts>=6.1.0`, `requirements-tts-opticlone.txt` terpisah (5-10GB model download on first run), `.gitignore` exclude models
+
 ### v1.0.0 (2026-09-12) — Renew Pastel & Easy Use
 - 🎨 **UI:** Reskin full pastel (cream/peach/mint/lilac/navy), light mode, layout 3 langkah
 - 🔒 **Security:** yt-dlp & ffmpeg pakai list-args (tanpa `shell=True`), validasi URL anti injection, path spasi aman
@@ -151,7 +157,7 @@ MIT — bebas personal & komersial.
 
 <div align="center">
 
-**Made with ❤️ for creators — v1.0.0 Pastel**
+**Made with ❤️ for creators — v1.1.0 Pastel + OptiClone**
 
 [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues) · [Request Feature](https://github.com/Chukie99/yt-short-clipper-offline/issues)
 
