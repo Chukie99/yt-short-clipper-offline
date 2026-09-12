@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎬 YT Short Clipper — v1.1.0
+# 🎬 YT Short Clipper Pro
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb)
 
