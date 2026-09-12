@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎬 YT Short Clipper — v1.1.0 *OptiClone + FFmpeg Skill*
+# 🎬 YT Short Clipper — v1.1.0
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb)
 
@@ -126,11 +126,11 @@ Python 3.8+ · FFmpeg · yt-dlp · faster-whisper · MediaPipe · OpenCV · Cust
 
 ## 📝 Changelog
 
-### v1.1.0 (2026-09-12) — OptiClone Voice Clone + FFmpeg Skill
-- 🎤 **TTS Unified:** `clipper_tts.py` — chain **OptiClone (LuxTTS 3s clone, 48kHz, 150× realtime, <1GB VRAM)** → **Edge-TTS** gratis `id-ID-ArdiNeural/GadisNeural` → Voicebox legacy. `tts_generate_hook()` lazy import, no hard dep
-- ⚙️ **Settings TTS:** Provider auto/edge/opticlone/voicebox + Edge voice picker + Ref wav 3 detik + Steps/Speed OptiClone, `🔍 Test API` tetap ada
-- 🎞️ **FFmpeg Skill:** bundled `skills/ffmpeg-skill` (kajisho5, 42 tools) + `docs/FFMPEG_SKILL.md` helper, `build_exe.py` bundle vendor/opticlone + skills
-- 📦 **Deps:** `requirements.txt` + `edge-tts>=6.1.0`, `requirements-tts-opticlone.txt` terpisah (5-10GB model download on first run), `.gitignore` exclude models
+### v1.1.0 (2026-09-12) — Voice Hook TTS inside + Engine FFmpeg inside
+- 🎤 **Voice Hook TTS di dalem:** AI bikin naskah `voice_hook_script` → langsung jadi suara otomatis (Edge-TTS `id-ID` gratis di dalem, OptiClone 3s clone kalau user taro ref wav — semua via `tts_generate_hook()`, lazy, gak perlu Voicebox)
+- 🎞️ **Engine video di dalem:** eksekusi video pakai FFmpeg internal (42 tools, bundled `skills/ffmpeg-skill` — probe/cut/fit 9:16/caption/export/loudness) + face tracking Kalman & karaoke PIL tetap jalan, `build_exe` sudah bundle
+- ⚙️ **Easy Use:** Settings gak usah pusing TTS — jalan otomatis `auto`, canggihnya di dalem aja
+- 📦 **Deps:** `edge-tts>=6.1.0` di `requirements.txt` (ringan), `requirements-tts-opticlone.txt` terpisah kalau mau clone (5-10GB HF cache)
 
 ### v1.0.0 (2026-09-12) — Renew Pastel & Easy Use
 - 🎨 **UI:** Reskin full pastel (cream/peach/mint/lilac/navy), light mode, layout 3 langkah

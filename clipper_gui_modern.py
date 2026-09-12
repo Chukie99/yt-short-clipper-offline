@@ -42,7 +42,7 @@ from PIL import Image as PILImage, ImageDraw, ImageFont
 
 class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, config, on_save):
-        super().__init__(parent); self.title("Settings"); self.geometry("620x1080"); self.config = config; self.on_save = on_save
+        super().__init__(parent); self.title("Settings"); self.geometry("620x980"); self.config = config; self.on_save = on_save
         self.configure(fg_color="#FFF7F0")
         self.grid_columnconfigure(1, weight=1); r = 0
         ctk.CTkLabel(self, text="AI Provider:", font=("Arial", 14, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w")
@@ -66,13 +66,14 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Watermark:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.w_var = ctk.StringVar(value=config.get("watermark", "")); ctk.CTkEntry(self, textvariable=self.w_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Pexels API Key:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.pk_var = ctk.StringVar(value=config.get("pexels_api_key", "")); ctk.CTkEntry(self, textvariable=self.pk_var, width=300, corner_radius=8, show="*").grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="BGM Volume:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.bv_var = ctk.DoubleVar(value=config.get("bgm_volume", 0.15)); ctk.CTkSlider(self, from_=0, to=1, variable=self.bv_var, width=300).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
-        # --- TTS (OptiClone / Edge-TTS / Voicebox) ---
-        ctk.CTkLabel(self, text="TTS Provider:", font=("Arial", 13, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=(15,5), sticky="w"); self.tts_var = ctk.StringVar(value=config.get("tts_provider", "auto")); ctk.CTkComboBox(self, values=["auto", "edge", "opticlone", "voicebox"], variable=self.tts_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=(15,5), sticky="ew"); r+=1
-        ctk.CTkLabel(self, text="Edge Voice:", text_color="#8D99AE").grid(row=r, column=0, padx=20, pady=5, sticky="w"); self.edge_var = ctk.StringVar(value=config.get("tts_edge_voice", "id-ID-ArdiNeural")); ctk.CTkComboBox(self, values=["id-ID-ArdiNeural", "id-ID-GadisNeural", "en-US-AriaNeural", "en-US-GuyNeural"], variable=self.edge_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=5, sticky="ew"); r+=1
-        ctk.CTkLabel(self, text="TTS Ref (3s wav):", text_color="#8D99AE").grid(row=r, column=0, padx=20, pady=5, sticky="w"); self.ref_var = ctk.StringVar(value=config.get("tts_reference_path", ""))
-        f_ref = ctk.CTkFrame(self, fg_color="transparent"); f_ref.grid(row=r, column=1, padx=20, pady=5, sticky="ew"); f_ref.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_ref, textvariable=self.ref_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_ref, text="📁", width=50, command=self.browse_tts_ref, fg_color="#F0DDD2", text_color="#2B2D42", corner_radius=8).grid(row=0, column=1); r+=1
-        ctk.CTkLabel(self, text="OptiClone Steps/Speed:", text_color="#8D99AE").grid(row=r, column=0, padx=20, pady=5, sticky="w")
-        f_opt = ctk.CTkFrame(self, fg_color="transparent"); f_opt.grid(row=r, column=1, padx=20, pady=5, sticky="ew"); self.steps_var = ctk.StringVar(value=str(config.get("opticlone_steps", 4))); self.speed_var = ctk.StringVar(value=str(config.get("opticlone_speed", 1.0))); ctk.CTkEntry(f_opt, textvariable=self.steps_var, width=70, corner_radius=8, placeholder_text="steps").pack(side="left", padx=2); ctk.CTkEntry(f_opt, textvariable=self.speed_var, width=70, corner_radius=8, placeholder_text="speed").pack(side="left", padx=2); ctk.CTkLabel(f_opt, text="(4 & 1.0 default)", text_color="#8D99AE").pack(side="left", padx=5); r+=1
+        # --- TTS Hook inside (auto, gak perlu setting) ---
+        # Hook TTS jalan otomatis di dalem: AI -> tts_generate_hook (Edge-TTS id-ID gratis, OptiClone kalau user taro ref 3s)
+        # Hidden vars keep config (gak ditampilin biar easy use)
+        self.tts_var = ctk.StringVar(value=config.get("tts_provider", "auto"))
+        self.edge_var = ctk.StringVar(value=config.get("tts_edge_voice", "id-ID-ArdiNeural"))
+        self.ref_var = ctk.StringVar(value=config.get("tts_reference_path", ""))
+        self.steps_var = ctk.StringVar(value=str(config.get("opticlone_steps", 4)))
+        self.speed_var = ctk.StringVar(value=str(config.get("opticlone_speed", 1.0)))
         ctk.CTkLabel(self, text="Logo:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.l_var = ctk.StringVar(value=config.get("logo_path", "")); f_l = ctk.CTkFrame(self, fg_color="transparent"); f_l.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_l.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_l, textvariable=self.l_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_l, text="🖼️", width=50, command=self.browse_logo, fg_color="#F0DDD2", corner_radius=8).grid(row=0, column=1); r += 1
         ctk.CTkLabel(self, text="Font:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w");         self.f_opts = list_available_fonts(); self.f_var = ctk.StringVar(value=config.get("subtitle_font", "KOMIKAX_.ttf")); ctk.CTkComboBox(self, values=self.f_opts, variable=self.f_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Render Quality:", font=("Arial", 14, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w")
@@ -191,7 +192,7 @@ class VideoItem(ctk.CTkFrame):
             self.br_cb.configure(state="disabled")
             self.br_var.set(False)
 
-        ctk.CTkLabel(r3, text="Voice Hook MP3:", text_color="#8D99AE").pack(side="left", padx=(15,3))
+        ctk.CTkLabel(r3, text="Hook Audio (auto TTS):", text_color="#8D99AE").pack(side="left", padx=(15,3))
         self.vh_var = ctk.StringVar(value="Pilih file MP3 hook..."); ctk.CTkEntry(r3, textvariable=self.vh_var, width=300, corner_radius=6).pack(side="left", padx=5)
         ctk.CTkButton(r3, text="📂", width=40, command=self.browse_voice_hook, fg_color="#F0DDD2", corner_radius=6).pack(side="left", padx=2)
         ctk.CTkLabel(r3, text="Hook Durasi:", text_color="#8D99AE").pack(side="left", padx=(10,3))
