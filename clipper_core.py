@@ -886,65 +886,14 @@ def get_audio_duration(file_path):
         logger.debug("get_audio_duration fallback for '%s': %s", file_path, e)
         return 0
 
-VOICEBOX_API = "http://127.0.0.1:17493"
+VOICEBOX_API = None  # removed — pure OptiClone
 
 def voicebox_generate(text: str, output_path: Path, log_func=None) -> bool:
-    try:
-        profiles = requests.get(f"{VOICEBOX_API}/profiles", timeout=5).json()
-        profile_id = profiles[0]["id"] if profiles else None
-        if not profile_id:
-            if log_func:
-                log_func("[🎤] Voicebox: No voice profiles found. Create one first.")
-            return False
-        resp = requests.post(f"{VOICEBOX_API}/generate", json={
-            "text": text, "profile_id": profile_id, "language": "en"
-        }, timeout=120, stream=True)
-        if resp.status_code != 200:
-            if log_func:
-                log_func(f"[🎤] Voicebox error {resp.status_code}: {resp.text[:200]}")
-            return False
-        ct = resp.headers.get("content-type", "")
-        if "json" in ct:
-            data = resp.json()
-            audio_url = data.get("audio_url") or data.get("url") or data.get("path")
-            if audio_url:
-                if not audio_url.startswith("http"):
-                    audio_url = f"{VOICEBOX_API}{audio_url}"
-                r = requests.get(audio_url, timeout=60)
-                with open(output_path, "wb") as f:
-                    f.write(r.content)
-            else:
-                audio_data = data.get("audio", data.get("data", data.get("base64")))
-                if audio_data:
-                    import base64
-                    with open(output_path, "wb") as f:
-                        f.write(base64.b64decode(audio_data))
-                else:
-                    if log_func:
-                        log_func("[🎤] Voicebox: No audio in response.")
-                    return False
-        else:
-            with open(output_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        if output_path.exists() and output_path.stat().st_size > 1000:
-            if log_func:
-                log_func(f"[🎤] Voicebox OK ({output_path.stat().st_size//1024} KB)")
-            return True
-        return False
-    except requests.ConnectionError:
-        if log_func:
-            log_func("[🎤] Voicebox not running. Start Voicebox or record hook manually.")
-        return False
-    except Exception as e:
-        if log_func:
-            log_func(f"[🎤] Voicebox error: {str(e)[:100]}")
-        return False
-
+    if log_func: log_func("[TTS] Voicebox dihapus — pakai OptiClone 3s ref.")
+    return False
 def tts_generate_hook(text: str, output_path: Path, config: dict | None = None, log_func=None) -> bool:
-    """Unified TTS: OptiClone (3s clone) -> Edge-TTS (id-ID gratis) -> Voicebox. Lazy import, no hard dep."""
+    """TTS hook pure OptiClone — lazy load clipper_tts.py, no voicebox."""
     cfg = config or {}
-    # 1) Try OptiClone/Edge via clipper_tts.py (lazy, no crash if deps missing)
     try:
         import importlib.util
         tts_path = Path(__file__).parent / "clipper_tts.py"
@@ -953,13 +902,13 @@ def tts_generate_hook(text: str, output_path: Path, config: dict | None = None, 
             mod = importlib.util.module_from_spec(spec)  # type: ignore
             assert spec and spec.loader
             spec.loader.exec_module(mod)  # type: ignore
-            if mod.tts_generate(text, output_path, config=cfg, log_func=log_func):
-                return True
+            return mod.tts_generate(text, output_path, config=cfg, log_func=log_func)
     except Exception as e:
         if log_func:
-            log_func(f"[TTS] clipper_tts fallback: {e}")
-    # 2) Voicebox legacy
-    return voicebox_generate(text, output_path, log_func=log_func)
+            log_func(f"[TTS] gagal: {e}")
+        import logging as _lg
+        _lg.getLogger("clipper.tts").debug("tts hook fail: %s", e)
+    return False
 
 class KalmanFilter:
     """1D Kalman filter for smoothing face-tracking coordinates.

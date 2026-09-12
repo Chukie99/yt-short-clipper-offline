@@ -95,7 +95,7 @@ Dapatkan key gratis: [OpenRouter](https://openrouter.ai/keys) · [Groq](https://
 
 **YouTube Cookies (biar download gak gagal):** Install extension "Get cookies.txt" → buka YouTube login → Export → simpan `.txt` → atur path di Settings.
 
-**Voice Hook (opsional):** Taruh file ref 3 detik di `Settings` → OptiClone auto clone suara → AI auto-generate, atau upload MP3 manual. (tanpa ref → fallback Voicebox `127.0.0.1:17493` kalau ada)
+**Voice Hook:** Taruh file ref 3 detik di `Settings` (vendor/opticlone) → OptiClone auto clone → AI auto-generate. Tanpa ref → tulis hook manual lalu upload MP3.
 
 ---
 
@@ -127,7 +127,7 @@ Python 3.8+ · FFmpeg · yt-dlp · faster-whisper · MediaPipe · OpenCV · Cust
 ## 📝 Changelog
 
 ### v1.1.0 (2026-09-12) — Voice Hook TTS inside + Engine FFmpeg inside
-- 🎤 **Voice Hook TTS di dalem:** AI bikin naskah `voice_hook_script` → langsung jadi suara otomatis via **OptiClone (LuxTTS)** — 3 detik ref wav clone suara sendiri, 48kHz, 150× realtime, <1GB VRAM. Fallback Voicebox legacy kalau belum install OptiClone (`tts_generate_hook()` lazy)
+- 🎤 **Voice Hook TTS di dalem (pure OptiClone):** AI bikin naskah `voice_hook_script` → langsung jadi suara via **OptiClone (LuxTTS)** only — 3 detik ref wav, 48kHz, 150× realtime, <1GB VRAM (`tts_generate_hook()` lazy, pure)
 - 🎞️ **Engine video di dalem:** eksekusi video pakai FFmpeg internal (42 tools, bundled `skills/ffmpeg-skill` — probe/cut/fit 9:16/caption/export/loudness) + face tracking Kalman & karaoke PIL tetap jalan, `build_exe` sudah bundle
 - ⚙️ **Easy Use:** TTS jalan otomatis di dalem, gak perlu setting
 - 📦 **Deps:** OptiClone terpisah `requirements-tts-opticlone.txt` (5-10GB HF cache first run), core ringan tanpa edge-tts
