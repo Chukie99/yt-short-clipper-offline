@@ -199,12 +199,48 @@ class VideoItem(ctk.CTkFrame):
         self.hook_dur_var = ctk.DoubleVar(value=1.5)
         ctk.CTkSlider(r3, from_=0.5, to=5.0, variable=self.hook_dur_var, width=100).pack(side="left", padx=3)
         ctk.CTkLabel(r3, textvariable=self.hook_dur_var, text_color="#8D99AE", width=35).pack(side="left", padx=2)
+        # v1.2 viral fields storage
+        self._hashtags = []
+        self._seo_tags = ""
+        self._title_alt = []
+        self._viral_score = ""
+        # r4 — copy viral pack 1-klik
+        r4 = ctk.CTkFrame(self.man_f, fg_color="transparent"); r4.pack(fill="x", pady=(4,0))
+        ctk.CTkLabel(r4, text="Viral Pack:", text_color="#8D99AE", font=("Arial", 11, "bold")).pack(side="left", padx=3)
+        ctk.CTkButton(r4, text="📋 Judul", width=75, height=26, fg_color="#FFF0E6", text_color="#2B2D42", hover_color="#F0DDD2", corner_radius=6, command=lambda: self._copy_viral("title")).pack(side="left", padx=3)
+        ctk.CTkButton(r4, text="#️⃣ Tag", width=65, height=26, fg_color="#E8F5E9", text_color="#2B2D42", hover_color="#C8E6C9", corner_radius=6, command=lambda: self._copy_viral("hashtags")).pack(side="left", padx=3)
+        ctk.CTkButton(r4, text="📝 Desc", width=70, height=26, fg_color="#E3F2FD", text_color="#2B2D42", hover_color="#BBDEFB", corner_radius=6, command=lambda: self._copy_viral("desc")).pack(side="left", padx=3)
+        self.viral_lbl = ctk.CTkLabel(r4, text="", text_color="#FF6B35", font=("Arial", 11, "bold")); self.viral_lbl.pack(side="left", padx=8)
         self.js_f = ctk.CTkFrame(self.cont, fg_color="transparent"); self.js_t = ctk.CTkTextbox(self.js_f, width=500, height=80, corner_radius=8, fg_color="#FFF7F0", text_color="#ccc"); self.js_t.pack(side="left", padx=10)
         ctk.CTkButton(self, text="✕", width=35, fg_color="#c44", hover_color="#a33", corner_radius=8, command=lambda: remove_cb(self)).grid(row=0, column=3, padx=15, pady=10, rowspan=2); self.update_ai_button(); self.toggle_mode("Manual")
     def toggle_mode(self, m):
         if m == "Manual": self.js_f.pack_forget(); self.man_f.pack(fill="x"); self.is_json = False
         else: self.man_f.pack_forget(); self.js_f.pack(fill="x"); self.is_json = True
     def set_status(self, s, c=None): self.st_lbl.configure(text=s, text_color=c if c else "#aaa")
+    def _copy_viral(self, kind):
+        try:
+            if kind == "title":
+                txt = self.t_var.get().strip()
+                alts = getattr(self, "_title_alt", [])
+                if alts:
+                    txt = txt + "\n" + "\n".join(f"{i+1}. {t}" for i,t in enumerate(alts))
+            elif kind == "hashtags":
+                h = getattr(self, "_hashtags", [])
+                txt = " ".join(h) if h else "#Shorts #Viral #FYP"
+                st = getattr(self, "_seo_tags", "")
+                if st:
+                    txt = txt + "\n\nSEO: " + st
+            else:
+                txt = getattr(self, "_ai_desc", "") or self.t_var.get()
+                h = getattr(self, "_hashtags", [])
+                if h:
+                    txt = txt + "\n\n" + " ".join(h)
+            self.clipboard_clear(); self.clipboard_append(txt)
+            self.log_func(f"[📋] Copied {kind} -> clipboard")
+            self.viral_lbl.configure(text="✓ Copied!")
+            self.after(1500, lambda: self.viral_lbl.configure(text=f"⭐ {self._viral_score}/10" if getattr(self, "_viral_score","") else ""))
+        except Exception as e:
+            self.log_func(f"[!] Copy gagal: {e}")
     def set_active(self, a=True): self.configure(border_color="#2B2D42" if a else "#F0DDD2", border_width=2 if a else 1)
     def update_ai_button(self):
         p = self.config.get("ai_provider")
@@ -223,7 +259,7 @@ class VideoItem(ctk.CTkFrame):
             logging.getLogger("clipper").debug("Zoom/Y-offset parse fallback: %s", e)
         hook_dur = self.hook_dur_var.get()
         
-        if not self.is_json: return [{ "link": lk, "start": self.s_var.get(), "end": self.e_var.get(), "title": self.t_var.get(), "lang": self.l_var.get() or "id", "model": self.mo_var.get(), "selected": self.sel_var.get(), "split": self.sp_var.get(), "thumb": self.thumb_var.get(), "mood": getattr(self, "_mood", "santai"), "zoom": z, "y_offset": y, "voice_hook": self.vh_var.get().strip(), "judul_opini": self.op_var.get().strip(), "use_broll": self.br_var.get(), "hook_dur": hook_dur, "_thumb_time": getattr(self, "_thumb_time", None), "_ai_desc": getattr(self, "_ai_desc", ""), "_hook_text": getattr(self, "_hook_text", "") }]
+        if not self.is_json: return [{ "link": lk, "start": self.s_var.get(), "end": self.e_var.get(), "title": self.t_var.get(), "lang": self.l_var.get() or "id", "model": self.mo_var.get(), "selected": self.sel_var.get(), "split": self.sp_var.get(), "thumb": self.thumb_var.get(), "mood": getattr(self, "_mood", "santai"), "zoom": z, "y_offset": y, "voice_hook": self.vh_var.get().strip(), "judul_opini": self.op_var.get().strip(), "use_broll": self.br_var.get(), "hook_dur": hook_dur, "_thumb_time": getattr(self, "_thumb_time", None), "_ai_desc": getattr(self, "_ai_desc", ""), "_hook_text": getattr(self, "_hook_text", "") or self.op_var.get().strip(), "hashtags": getattr(self, "_hashtags", []), "seo_tags": getattr(self, "_seo_tags", ""), "title_alt": getattr(self, "_title_alt", []), "viral_score": getattr(self, "_viral_score", "") }]
         try:
             segs = json.loads(self.js_t.get("1.0", "end").strip())
             if isinstance(segs, dict): segs = [segs]
@@ -235,6 +271,9 @@ class VideoItem(ctk.CTkFrame):
                 s.setdefault("zoom", z); s.setdefault("y_offset", y)
                 s.setdefault("voice_hook", self.vh_var.get().strip()); s.setdefault("judul_opini", self.op_var.get().strip())
                 s.setdefault("use_broll", self.br_var.get())
+                s.setdefault("hashtags", getattr(self, "_hashtags", [])); s.setdefault("seo_tags", getattr(self, "_seo_tags", ""))
+                s.setdefault("title_alt", getattr(self, "_title_alt", [])); s.setdefault("viral_score", getattr(self, "_viral_score", ""))
+                s.setdefault("_hook_text", s.get("hook","") or s.get("judul_opini","")); s.setdefault("_ai_desc", s.get("description",""))
             return segs
         except (json.JSONDecodeError, TypeError, AttributeError) as e:
             import logging
@@ -281,14 +320,14 @@ class VideoItem(ctk.CTkFrame):
 
 class App(ctk.CTk):
     def __init__(self):
-        super().__init__(); self.title("YT Short Clipper v1.1.0"); self.geometry("1100x850"); 
+        super().__init__(); self.title("YT Short Clipper v1.2.0"); self.geometry("1100x850"); 
         ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
         de = check_dependencies(); self.dependency_failed = len(de) > 0
         self.config = load_config(); self.v_items = []; self.proc = False; self.proc_lock = threading.Lock()
         self.grid_columnconfigure(0, weight=1); [self.grid_rowconfigure(i, weight=0) for i in range(6)]; self.grid_rowconfigure(6, weight=1)
         m = ctk.CTkFrame(self, height=40, fg_color="#FFF7F0", corner_radius=0); m.grid(row=0, column=0, sticky="ew"); m.grid_columnconfigure(0, weight=1)
         ctk.CTkButton(m, text="⚙️ Settings", command=self.open_settings, fg_color="transparent", hover_color="#F0DDD2").pack(side="left", padx=10, pady=5)
-        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v1.1.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
+        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v1.2.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
         ctk.CTkLabel(self, text="YT Shorts Clipper Pro", font=("Arial", 26, "bold"), text_color="#fff").grid(row=1, column=0, pady=15)
         f_l = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10); f_l.grid(row=2, column=0, padx=30, pady=5, sticky="ew"); f_l.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(f_l, text="🎬 Link YouTube:", font=("Arial", 14, "bold"), text_color="#2B2D42").pack(side="left", padx=(15,10), pady=10)
@@ -425,6 +464,14 @@ class App(ctk.CTk):
             it.s_var.set(s.get("start","00:00:00")); it.e_var.set(s.get("end","00:00:10"))
             it.t_var.set(s.get("title","")); it._mood = s.get("mood","santai"); it._ai_desc = s.get("description","")
             it.op_var.set(s.get("judul_opini",""))
+            # v1.2 viral fields
+            it._hashtags = s.get("hashtags", []) or []
+            it._seo_tags = s.get("seo_tags", "") or ""
+            it._title_alt = s.get("title_alt", []) or []
+            it._viral_score = s.get("viral_score", "") or ""
+            it._hook_text = s.get("hook", "") or s.get("judul_opini","")
+            if getattr(it, "viral_lbl", None) is not None and it._viral_score:
+                it.viral_lbl.configure(text=f"⭐ {it._viral_score}/10")
             if s.get("split_screen", False):
                 it.sp_var.set(True)
             if not s.get("thumb", True):
@@ -473,7 +520,11 @@ class App(ctk.CTk):
                 "judul_opini": v.get("judul_opini", ""),
                 "use_broll": v.get("use_broll", False),
                 "hook_dur": v.get("hook_dur", 1.5),
-                "hook_text": v.get("_hook_text", ""),
+                "hook_text": v.get("_hook_text", "") or v.get("hook", "") or v.get("judul_opini",""),
+                "hashtags": v.get("hashtags", []) or v.get("_hashtags", []),
+                "seo_tags": v.get("seo_tags", "") or v.get("_seo_tags", ""),
+                "title_alt": v.get("title_alt", []) or v.get("_title_alt", []),
+                "viral_score": v.get("viral_score", "") or v.get("_viral_score", ""),
                 "gen_thumb": v.get("thumb", True),
                 "root": self,
                 "config": self.config,

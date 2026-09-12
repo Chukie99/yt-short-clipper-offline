@@ -244,15 +244,20 @@ Analisis seperti content creator yang paham algoritma TikTok/YouTube Shorts. Car
   {{
     "start": "HH:MM:SS",
     "end": "HH:MM:SS",
-    "title": "Judul VIRAL (bikin penasaran, pake angka atau pertanyaan)",
-    "description": "DESKRIPSI PANJANG & ENGAGING (min 3 paragraf). Ceritakan konteks, kenapa ini penting, ajak diskusi di komen, + 10-15 hashtag relevan.",
-    "hook": "Satu kalimat yang bikin orang WAJIB nonton",
-    "mood": "inspirasi/tegang/santai/kocak",
+    "title": "Judul VIRAL utama (bikin penasaran, pake angka/pertanyaan, max 60 char)",
+    "title_alt": ["Judul alternatif 1 (gaya beda)", "Judul alternatif 2 (clickbait)"],
+    "description": "DESKRIPSI PANJANG & ENGAGING (min 3 paragraf). Ceritakan konteks, kenapa penting, ajak diskusi. JANGAN taruh hashtag di sini.",
+    "hashtags": ["#keyword1", "#keyword2", "#Shorts", "#Viral", "#FYP"],
+    "seo_tags": "keyword1, keyword2, shorts, viral, fyp",
+    "viral_score": 8,
+    "hook": "HOOK 8-12 kata caps sebagian yang bikin WAJIB nonton",
+    "mood": "inspirasi/tegang/santai/kocak/sedih",
     "split_screen": false,
-    "judul_opini": "Teks overlay provokatif 2-4 kata (misal: 'STOP OVER THINKING!' atau 'MINDBLOWING!')",
-    "voice_hook_script": "Naskah hook 1 kalimat untuk voice over pembuka, langsung ke inti masalah"
+    "judul_opini": "Teks overlay provokatif 2-4 kata (misal: 'STOP OVER THINKING!')",
+    "voice_hook_script": "Naskah hook 1 kalimat untuk VO pembuka, langsung inti"
   }}
 ]
+WAJIB isi semua field. hashtags 10-15 diawali #. seo_tags 8-12 keyword comma-separated. viral_score 7-10.
 Keluarakan HANYA JSON array."""
 
 def load_config():
@@ -1835,17 +1840,42 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             log_func(f"[{safe_id}] ❌ Rendering gagal.")
             return False, "FFmpeg error"
 
+        hashtags = opts.get("hashtags", []) or []
+        seo_tags = opts.get("seo_tags", "")
+        title_alt = opts.get("title_alt", []) or []
+        viral_score = opts.get("viral_score", "")
+        hashtags_line = " ".join(hashtags) if hashtags else "#Shorts #Viral #Edukasi #FYP #Trending"
         with open(desc_path, "w", encoding="utf-8") as df:
             df.write(f"{'='*50}\n")
             df.write(f"📌 JUDUL: {title.upper()}\n")
+            if title_alt:
+                df.write(f"📋 ALTERNATIF:\n")
+                for i, t in enumerate(title_alt, 1):
+                    df.write(f"  {i}. {t}\n")
+            if viral_score:
+                df.write(f"⭐ VIRAL SCORE: {viral_score}/10\n")
             df.write(f"{'='*50}\n\n")
             df.write(f"📝 DESKRIPSI:\n{ai_desc}\n\n")
+            df.write(f"🏷 HASHTAG:\n{hashtags_line}\n\n")
+            if seo_tags:
+                df.write(f"🔍 SEO TAGS:\n{seo_tags}\n\n")
             df.write(f"{'─'*40}\n")
             df.write(f"🔗 LINK ASLI: {link}\n")
             df.write(f"⏱ TIMESTAMP: {start_sec}s - {end_sec}s\n")
+            hook_out = opts.get("hook_text", "") or opts.get("judul_opini", "")
+            if hook_out:
+                df.write(f"🎯 HOOK 0-2s: {hook_out}\n")
             df.write(f"📅 DIBUAT: {time.strftime('%d-%m-%Y %H:%M')}\n")
             df.write(f"{'─'*40}\n")
-            df.write(f"\n#Shorts #Viral #Edukasi #FYP #Trending\n")
+        # cover 9:16 copy for easy upload (same as smart thumb)
+        cover_path = today_dir / f"{safe_title}_cover.jpg"
+        if 'best_thumb_frame' in locals() and best_thumb_frame is not None:
+            try:
+                import shutil as _sh
+                if thumb_path.exists() and str(cover_path) != str(thumb_path):
+                    _sh.copy(str(thumb_path), str(cover_path))
+            except Exception:
+                pass
         log_func(f"[{safe_id}] ✅ Selesai -> {final_out.name}")
         return True, str(final_out)
     except Exception as e:

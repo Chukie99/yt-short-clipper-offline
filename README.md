@@ -8,7 +8,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)](https://python.org)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-required-green?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
-[![Release](https://img.shields.io/badge/Release-v1.1.0-FFDAC1?style=for-the-badge)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
+[![Release](https://img.shields.io/badge/Release-v1.2.0-FFDAC1?style=for-the-badge)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chuckie999)
 
@@ -126,6 +126,13 @@ Python 3.8+ · FFmpeg · yt-dlp · faster-whisper · MediaPipe · OpenCV · Cust
 
 ## 📝 Changelog
 
+### v1.2.0 (2026-09-12) — Viral Pack inside
+- 🔥 **Hook 0-2s gede:** `hook` AI auto jadi teks besar kuning outline di 0-2s (anti skip, retention +20%)
+- 📋 **Tombol Viral Pack per clip:** Copy Judul (3 opsi `title`+`title_alt`), #Hashtag (10-15), Deskripsi+Hashtag 1 klik → clipboard + badge ⭐ viral_score 7-10
+- 🤖 **GEMINI_PROMPT v1.2:** output baru `title_alt/hashtags/seo_tags/viral_score` terpisah — SEO siap FYP tanpa edit manual
+- 📄 **_desc.txt + cover upgrade:** judul alt + HASHTAG line + SEO TAGS + HOOK 0-2s + auto copy `*_cover.jpg` 9:16 siap upload
+- 🎤 **Tetap pure OptiClone inside:** `tts_generate_hook()` lazy, hook TTS di dalem (vendor/opticlone)
+
 ### v1.1.0 (2026-09-12) — Voice Hook TTS inside + Engine FFmpeg inside
 - 🎤 **Voice Hook TTS di dalem (pure OptiClone):** AI bikin naskah `voice_hook_script` → langsung jadi suara via **OptiClone (LuxTTS)** only — 3 detik ref wav, 48kHz, 150× realtime, <1GB VRAM (`tts_generate_hook()` lazy, pure)
 - 🎞️ **Engine video di dalem:** eksekusi video pakai FFmpeg internal (42 tools, bundled `skills/ffmpeg-skill` — probe/cut/fit 9:16/caption/export/loudness) + face tracking Kalman & karaoke PIL tetap jalan, `build_exe` sudah bundle
@@ -157,7 +164,7 @@ MIT — bebas personal & komersial.
 
 <div align="center">
 
-**Made with ❤️ for creators — v1.1.0**
+**Made with ❤️ for creators — v1.2.0**
 
 [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues) · [Request Feature](https://github.com/Chukie99/yt-short-clipper-offline/issues)
 
