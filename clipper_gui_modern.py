@@ -23,7 +23,7 @@ from clipper_core import (
 )
 
 import customtkinter as ctk
-# --- Pastel palette (v3.1 Easy Use) ---
+# --- Pastel palette (v1.0.0 Easy Use) ---
 PASTEL_BG = "#FFF7F0"
 PASTEL_CARD = "#FFFFFF"
 PASTEL_LINE = "#F0DDD2"
@@ -270,14 +270,14 @@ class VideoItem(ctk.CTkFrame):
 
 class App(ctk.CTk):
     def __init__(self):
-        super().__init__(); self.title("YT Short Clipper v3.0"); self.geometry("1100x850"); 
+        super().__init__(); self.title("YT Short Clipper v1.0.0"); self.geometry("1100x850"); 
         ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
         de = check_dependencies(); self.dependency_failed = len(de) > 0
         self.config = load_config(); self.v_items = []; self.proc = False; self.proc_lock = threading.Lock()
         self.grid_columnconfigure(0, weight=1); [self.grid_rowconfigure(i, weight=0) for i in range(6)]; self.grid_rowconfigure(6, weight=1)
         m = ctk.CTkFrame(self, height=40, fg_color="#FFF7F0", corner_radius=0); m.grid(row=0, column=0, sticky="ew"); m.grid_columnconfigure(0, weight=1)
         ctk.CTkButton(m, text="⚙️ Settings", command=self.open_settings, fg_color="transparent", hover_color="#F0DDD2").pack(side="left", padx=10, pady=5)
-        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v3.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
+        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v1.0.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
         ctk.CTkLabel(self, text="YT Shorts Clipper Pro", font=("Arial", 26, "bold"), text_color="#fff").grid(row=1, column=0, pady=15)
         f_l = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10); f_l.grid(row=2, column=0, padx=30, pady=5, sticky="ew"); f_l.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(f_l, text="🎬 Link YouTube:", font=("Arial", 14, "bold"), text_color="#2B2D42").pack(side="left", padx=(15,10), pady=10)

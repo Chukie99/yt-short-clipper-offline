@@ -1,4 +1,4 @@
-# PRD — YT Short Clipper v3.1 (Pastel & Easy Use)
+# PRD — YT Short Clipper v1.0.0 (Pastel & Easy Use)
 
 **Tanggal:** 12 Sep 2026 | **Repo:** Chukie99/yt-short-clipper-offline | **Platform:** Windows EXE + Colab
 **Tagline:** Paste link YouTube → jadi Shorts 9:16 viral dalam 1 klik
@@ -32,7 +32,7 @@ Ink: #2B2D42  Muted: #8D99AE  Accent: #FF8A65  Navy CTA: #2B2D42
 
 ## 5. Information Architecture
 ```
-[Header: Logo + v3.1]
+[Header: Logo + v1.0.0]
 [Hero: Headline kiri + Phone preview kanan (420x740)]
 [Stats: AI / Face / Karaoke — 3 kartu pastel]
 [Main: Kiri= Alur 3 langkah + Quality chip | Kanan= Input Link + Template + Badges]
@@ -40,7 +40,7 @@ Ink: #2B2D42  Muted: #8D99AE  Accent: #FF8A65  Navy CTA: #2B2D42
 ```
 Mobile: hero stack, 3 kartu jadi 1 kolom.
 
-## 6. Fitur Inti (MVP v3.1)
+## 6. Fitur Inti (MVP v1.0.0)
 | Fitur | Detail | Easy Use |
 |---|---|---|
 | AI Viral Finder | Gemini/OpenRouter, prompt skor 1–10 (aha, emosi, punchline), durasi 45–75s, skor≥7 | 1 klik analisis, hasil berupa card dengan judul viral + hook |
@@ -78,7 +78,7 @@ Advanced di modal: AI provider (OpenRouter free rekom), Pexels key, cookies.txt,
 9. Crash mid-render → queue_state.json bisa resume.
 10. EXE jalan tanpa install Python (bundled bin/ffmpeg, yt-dlp).
 
-## 11. Non-Goals v3.1
+## 11. Non-Goals v1.0.0
 Bukan editor timeline manual, bukan autotranslate, bukan upload langsung ke YouTube.
 
 ## 12. File Terkait

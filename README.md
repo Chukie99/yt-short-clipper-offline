@@ -1,214 +1,157 @@
 <div align="center">
 
-# 🎬 YT Short Clipper Pro
+# 🎬 YT Short Clipper — v1.0.0 *Pastel & Easy Use*
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb)
 
-**AI-Powered YouTube Shorts Generator**
-
-Ubah video YouTube panjang menjadi Shorts viral secara otomatis dengan AI, face tracking, dan karaoke subtitle.
+**Paste link YouTube → jadi Shorts viral 9:16 otomatis. 3 klik jadi.**
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)](https://python.org)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-required-green?logo=ffmpeg&logoColor=white)](https://ffmpeg.org)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-FFDAC1?style=for-the-badge)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v3.0-brightgreen)](https://github.com/Chukie99/yt-short-clipper-offline/releases)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chuckie999)
+
+*Desktop Windows (pastel) + 1-Click Colab — offline-first, no watermark.*
 
 </div>
 
 ---
 
-## ✨ Fitur Utama
+## ✨ Apa ini?
+
+YT Short Clipper mengubah **video YouTube panjang → Shorts 9:16 siap upload** secara otomatis:
+AI cari momen viral → face tracking ikut pembicara → karaoke subtitle → template 4 style → export 1080x1920.
+
+> **v1.0.0 Renew:** Full rewrite — UI pastel soft, alur 3 langkah, aman (no shell injection), queue anti-corrupt, Test API 1 klik.
+
+---
+
+## 🎨 Desain Pastel & Easy Use
+
+- **Palette:** Cream `#FFF7F0` + Peach/Mint/Lilac, card putih, line `#F0DDD2`, tombol navy `#2B2D42` — soft di mata
+- **3 Klik Jadi:** `Paste link` → `Centang segmen AI` → `Proses` (semua default udah jalan, gak perlu setting)
+- **4 Template 1-klik:** Cinematic / Clean / Bold / Story
+- **Quality chip:** Draft / Normal / High (disarankan Normal)
+
+Mockup desktop: `docs/mockup_desktop.html` — PRD lengkap: `docs/PRD_Pastel_EasyUse.md`
+
+---
+
+## ✨ Fitur
 
 | Fitur | Deskripsi |
 |-------|-----------|
-| 🤖 **AI Analysis** | Otomatis temukan segmen viral menggunakan AI (OpenRouter/Groq/Gemini) |
-| 👁️ **Face Tracking** | Kamera otomatis mengikuti pembicara dengan Kalman Filter |
-| 🎤 **Karaoke Subtitle** | Subtitle per kata dengan animasi bounce & warna aktif |
-| 🎬 **Multiple Template** | 4 style: Cinematic, Clean, Bold, Story |
-| 🖼️ **B-Roll Overlay** | Otomatis cari visual dari Pexels berdasarkan konten |
-| 🎵 **Background Music** | Auto-download BGM sesuai mood video |
-| 🎤 **Voice Hook** | Tambah voice over pembuka dengan Voicebox |
-| 📐 **Split Screen** | Tampilkan 2+ pembicara sekaligus |
-| 🏷️ **Watermark** | Logo + watermark dengan pill background |
-| 📊 **Progress ETA** | Tampil sisa waktu saat rendering |
+| 🤖 **AI Analysis** | Temukan segmen viral otomatis (OpenRouter / Groq / Gemini) |
+| 👁️ **Face Tracking** | Kamera follow pembicara (Kalman Filter), auto-rotate landscape→portrait |
+| 🎤 **Karaoke Subtitle** | Per kata bounce + warna aktif, font pilihan |
+| 🎬 **4 Template** | Cinematic, Clean, Bold, Story |
+| 🖼️ **B-Roll** | Overlay visual dari Pexels (sesuai konten) |
+| 🎵 **BGM** | Auto backsound lokal `backsound/` + warning kalau fallback YouTube |
+| 🎤 **Voice Hook** | Voice over pembuka via Voicebox (port 17493) atau MP3 manual + slider 0.5-5s |
+| 📐 **Split Screen** | 2+ pembicara sekaligus |
+| 🏷️ **Watermark/Logo** | Pill background, posisi custom |
+| 📊 **ETA + Log** | Progress + sisa waktu render |
+| 🔍 **Test API** | Cek API key jalan/belum langsung di Settings |
+| 💾 **Queue Persist** | Antrian aman (atomic save), lanjut setelah restart |
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (3 Langkah)
 
-### 1-Click Colab (Recommended)
+**1. Paste** link YouTube → klik **Ambil & Analisis**
+**2. Centang** segmen yang mau dijadikan Shorts (AI sudah pilihkan)
+**3. Klik Proses** → hasil ada di `output/` siap upload TikTok / YouTube Shorts
 
-Klik badge di atas atau [buka langsung](https://colab.research.google.com/github/Chukie99/yt-short-clipper-offline/blob/main/docs/YT_Short_Clipper.ipynb). Jalankan 2 cells, dapatkan URL ngrok, akses dari browser HP/laptop.
+### Opsi Jalan
 
-### Download EXE
+**A. 1-Click Colab (paling gampang):**
+Klik badge Colab di atas → Run 2 cells → buka URL ngrok di HP/laptop.
 
-Download versi terbaru dari [Releases](https://github.com/Chukie99/yt-short-clipper-offline/releases), extract, lalu jalankan `YTShortClipper.exe`.
+**B. Download EXE (Windows):**
+Download dari [Releases](https://github.com/Chukie99/yt-short-clipper-offline/releases) → extract → jalankan `YTShortClipper.exe` (bin/ ffmpeg+yt-dlp sudah bundling).
 
-### Build dari Source
-
+**C. Dari Source:**
 ```bash
-# Clone repository
 git clone https://github.com/Chukie99/yt-short-clipper-offline.git
 cd yt-short-clipper-offline
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Jalankan
-python clipper_gui_modern.py
-
-# Build EXE
-python build_exe.py
+python clipper_gui_modern.py   # GUI pastel
+python build_exe.py            # build EXE
 ```
 
 ---
 
-## ⚙️ Konfigurasi
+## ⚙️ Konfigurasi (gak wajib — default sudah jalan)
 
-### AI Provider (Gratis)
+| Provider | Model default | Catatan |
+|----------|---------------|---------|
+| OpenRouter | `nvidia/nemotron-3-super-120b-a12b:free` | ✅ Recommended gratis |
+| Groq | `llama-3.3-70b-versatile` | ⚠️ Rate limited |
+| Gemini | `gemini-2.0-flash` | ⚠️ Quota limited |
 
-| Provider | Model | Status |
-|----------|-------|--------|
-| OpenRouter | nvidia/nemotron-3-super-120b-a12b:free | ✅ Recommended |
-| Groq | llama-3.3-70b-versatile | ⚠️ Rate limited |
-| Gemini | gemini-2.0-flash | ⚠️ Quota limited |
+Dapatkan key gratis: [OpenRouter](https://openrouter.ai/keys) · [Groq](https://console.groq.com/keys) · [Gemini](https://aistudio.google.com/apikey)
+→ Masukkan di **Settings** → klik **🔍 Test API Key** untuk cek.
 
-Dapatkan API key gratis di:
-- OpenRouter: https://openrouter.ai/keys
-- Groq: https://console.groq.com/keys
-- Gemini: https://aistudio.google.com/apikey
+**YouTube Cookies (biar download gak gagal):** Install extension "Get cookies.txt" → buka YouTube login → Export → simpan `.txt` → atur path di Settings.
 
-### YouTube Cookies
-
-Untuk download video tanpa watermark:
-
-1. Install extension "Get cookies.txt" di Chrome
-2. Buka YouTube.com dan login
-3. Klik extension → Export
-4. Simpan file `.txt` dan atur path di Settings
-
-### Voice Hook (Optional)
-
-Fitur Voice Hook memungkinkan menambahkan voice over pembuka secara otomatis menggunakan Voicebox local server.
-
-**Persiapan:**
-1. Install dan jalankan [Voicebox](https://github.com/Chukie99/voicebox) di port `17493` (default)
-2. Buat voice profile di Voicebox
-3. AI akan otomatis generate voice hook saat analisis, atau rekam manual sebagai MP3
-
-**Cara pakai:**
-- Saat AI analysis, field `voice_hook_script` akan generate audio otomatis (jika Voicebox running)
-- Atau klik folder di kolom "Voice Hook MP3" untuk upload MP3 rekaman manual
-- Atur durasi hook dengan slider (0.5 - 5 detik)
+**Voice Hook (opsional):** Jalankan [Voicebox](https://github.com/Chukie99/voicebox) di port `17493` → buat voice profile → AI auto-generate, atau upload MP3 manual.
 
 ---
 
-## 🎯 Cara Pakai
-
-1. **Paste link YouTube** → Klik "Ambil & Analisis"
-2. **Tunggu AI analisis** → Akan muncul segmen viral yang direkomendasikan
-3. **Editopsional** → Atur zoom, split screen, voice hook
-4. **Klik "Proses Terpilih"** → Tunggu rendering selesai
-5. **Hasil ada di folder `output/`** → Siap upload ke TikTok/YouTube Shorts
-
----
-
-## 📁 Struktur Project
+## 📁 Struktur
 
 ```
 yt-short-clipper-offline/
-├── clipper_gui_modern.py    # Source code utama (Desktop GUI)
-├── clipper_core.py          # Core logic (shared by all interfaces)
-├── app.py                   # Streamlit WebUI
-├── clipper_web.py           # Gradio WebUI
-├── colab.ipynb              # 1-Click Colab notebook (root)
-├── build_exe.py             # Script build EXE
-├── config.json              # Konfigurasi (API keys, settings)
-├── cookies.txt              # YouTube cookies
-├── requirements.txt         # Python dependencies
-├── bin/                     # FFmpeg, yt-dlp, detector model
-├── fonts/                   # Font untuk subtitle
-├── backsound/               # Background music files
-├── output/                  # Hasil video
-├── dist/                    # EXE build
+├── clipper_gui_modern.py    # Desktop GUI pastel (utama)
+├── clipper_core.py          # Core logic (shared)
+├── app.py / clipper_web.py  # Streamlit / Gradio WebUI
+├── build_exe.py             # Build EXE
+├── config.json              # API keys & settings
+├── bin/                     # ffmpeg, yt-dlp, detector
+├── fonts/ backsound/ output/ dist/
 └── docs/
-    └── YT_Short_Clipper.ipynb  # Colab notebook (recommended)
+    ├── YT_Short_Clipper.ipynb
+    ├── mockup_desktop.html
+    ├── mockup_pastel.html
+    └── PRD_Pastel_EasyUse.md
 ```
 
 ---
 
 ## 🛠️ Dependencies
-
-- **Python 3.8+**
-- **FFmpeg** - Video processing
-- **yt-dlp** - YouTube download
-- **faster-whisper** - Speech-to-text
-- **MediaPipe** - Face detection
-- **OpenCV** - Image processing
-- **CustomTkinter** - Modern GUI
+Python 3.8+ · FFmpeg · yt-dlp · faster-whisper · MediaPipe · OpenCV · CustomTkinter
 
 ---
 
 ## 📝 Changelog
 
-### v3.0 (2026-07-20)
-- ✅ Performance: Frame skipping untuk face detection (3x lebih cepat)
-- ✅ Performance: Lower detection resolution (2x lebih cepat)
-- ✅ Fitur: ETA progress saat rendering
-- ✅ Fitur: Auto-rotate landscape ke portrait
-- ✅ Fitur: Hook duration slider (0.5-5 detik)
-- ✅ Fitur: Subtitle preview di Settings
-- ✅ Fix: Export resolution sekarang berfungsi
-- ✅ Fix: Thread-safe GUI updates
-- ✅ Fix: File dialog support PNG/JPG
+### v1.0.0 (2026-09-12) — Renew Pastel & Easy Use
+- 🎨 **UI:** Reskin full pastel (cream/peach/mint/lilac/navy), light mode, layout 3 langkah
+- 🔒 **Security:** yt-dlp & ffmpeg pakai list-args (tanpa `shell=True`), validasi URL anti injection, path spasi aman
+- 💾 **Stability:** Queue save atomic (`.tmp`→replace), load_config ignore empty key (gak 401 lagi), subtitle prioritas `id`→`en`
+- 🧵 **GUI:** `sys.stdout` thread-safe via `after(0)`, cookies insert benar, BGM YouTube fallback kasih warning copyright
+- ⚙️ **UX:** Tombol **Test API Key** di Settings, label "Batal", warna pastel konsisten
+- 📄 **Docs:** PRD + mockup desktop pastel baru
 
-### v2.0
-- AI-powered viral segment analysis
-- Karaoke subtitle animation
-- Multiple templates
-- B-Roll overlay
-- Split screen support
+### v3.1 (2026-07-21) — Bug Fixes + Self-Contained Build
+### v3.0 (2026-07-20) — Performance 3x, ETA, auto-rotate, hook slider
+### v2.0 — AI viral analysis, karaoke subtitle, B-Roll, split screen
 
 ---
 
 ## 🤝 Contributing
-
-Kontribusi sangat welcome! Cara berkontribusi:
-
-1. **Fork** repository ini
-2. Buat branch baru (`git checkout -b fitur/nama-fitur`)
-3. Commit perubahan (`git commit -m 'Tambah fitur XYZ'`)
-4. Push ke branch (`git push origin fitur/nama-fitur`)
-5. Buka **Pull Request**
-
-Atau langsung:
-- [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues)
-- [Request Feature](https://github.com/Chukie99/yt-short-clipper-offline/issues)
-
----
+Fork → branch `fitur/nama-fitur` → commit → push → Pull Request. Atau [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues).
 
 ## 💖 Support
-
-Jika project ini bermanfaat untukmu, dukung pengembangan selanjutnya:
-
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Beli%20Kopi-FF5E5B?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/chuckie999)
-
-Donasi bisa juga lewat:
-- **Ko-fi**: [ko-fi.com/chuckie999](https://ko-fi.com/chuckie999)
-- **GitHub Sponsors**: [github.com/sponsors/Chukie99](https://github.com/sponsors/Chukie99)
-
----
+Suka project ini? Traktir kopi: [ko-fi.com/chuckie999](https://ko-fi.com/chuckie999) · [GitHub Sponsors](https://github.com/sponsors/Chukie99)
 
 ## 📄 License
-
-MIT License - Gunakan bebas untuk personal dan komersial.
-
----
+MIT — bebas personal & komersial.
 
 <div align="center">
 
-**Made with ❤️ for content creators**
+**Made with ❤️ for creators — v1.0.0 Pastel**
 
 [Report Bug](https://github.com/Chukie99/yt-short-clipper-offline/issues) · [Request Feature](https://github.com/Chukie99/yt-short-clipper-offline/issues)
 

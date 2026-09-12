@@ -463,7 +463,7 @@ def build_ui():
 
         gr.Markdown("""
         ---
-        **YT Short Clipper Pro v3.0** — [GitHub](https://github.com/Chukie99/yt-short-clipper-offline) | Made with ❤️
+        **YT Short Clipper v1.0.0** — [GitHub](https://github.com/Chukie99/yt-short-clipper-offline) | Made with ❤️
         """)
 
     return demo
