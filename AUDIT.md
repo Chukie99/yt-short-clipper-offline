@@ -219,3 +219,93 @@ Semua berikut butuh Windows GUI + jaringan + API key berbayar:
 5. **GPU path** — `detect_whisper_device` perlu diuji di PC bertenaga GPU **dan** PC
    tanpa GPU untuk memastikan tidak ada regresi.
 6. **Migrasi config lama** — perlu diuji dengan `config.json`+v1.2.0 sungguhan.
+
+---
+
+## Temuan fase 5 (packaging) — urutan menurut risiko
+
+### [P1] Known Folder Windows yang tidak bisa ditulis, dengan pesan yang menyesatkan
+
+**Ditemukan:** saat menulis `check_output_dir()` untuk first-run check, di PC
+develop sendiri.
+
+**Gejalanya:**
+
+```
+>>> Path.home() / "Videos"
+C:\Users\SOPIAN\Videos
+>>> (Path.home() / "Videos" / "x").mkdir()
+WinError 2: The system cannot find the file specified
+```
+
+Foldernya ada. User punya Full Control (`icacls` ->
+`SOPIAN\SOPIAN:(I)(OI)(CI)(F)`). `iterdir()` berhasil. Tapi `mkdir` dan
+`write_text` di dalamnya gagal.
+
+**HIPOTESIS YANG DICEK DAN SEMUANYA SALAH:**
+
+| Dugaan | Hasil |
+|---|---|
+| Atribut ReadOnly | `attrib -r` -> "Access denied". `SetFileAttributesW` -> rc=0 (gagal). Atribut tetap 0x11 |
+| Symlink / reparse point | `os.readlink` -> "not a reparse point" (WinError 4390). `st_file_attributes & 0x400` = False |
+| OneDrive redirect | `OneDrive\Videos` tidak ada |
+| ACL kurang | Full control ada |
+| Path salah (artefak MSYS) | Gagal juga lewat `cmd.exe` langsung |
+| Parent tidak ada | `Videos` `is_dir()` = True, `iterdir()` = 3 entri |
+
+**Yang membuatnya berhasil:**
+
+| Lokasi | mkdir |
+|---|---|
+| `C:/Users/SOPIAN/Videos` | FAIL |
+| `C:/Users/SOPIAN/Documents` | FAIL |
+| `C:/Users/SOPIAN/Music` | FAIL |
+| `C:/Users/SOPIAN/Pictures` | FAIL |
+| `C:/Users/SOPIAN/Desktop` | FAIL |
+| `C:/Users/SOPIAN/Downloads` | OK |
+| `C:/Users/SOPIAN` | OK |
+| `C:/Users/Public` | OK |
+| `C:/` | OK |
+| `%LOCALAPPDATA%\Temp` | OK |
+| repo | OK |
+
+Polanya jelas: yang gagal adalah Known Folder Windows yang dikelola shell
+(`Videos`, `Documents`, `Music`, `Pictures`, `Desktop`). Yang berhasil adalah
+folder biasa.
+
+**Kenapa ini penting untuk produk yang dijual.** `default_output_dir()` adalah
+`~/Videos/YTShortClipperPro`. Artinya di PC dengan kondisi seperti ini, user
+mendapat error `WinError 2` yang menyiratkan foldernya hilang - padahal folder
+ada di depan mata. Dan gejalanya muncul di tengah render, setelah menunggu
+unduhan model.
+
+**Status:** dideteksi oleh `clipper_firstrun.check_output_dir()` dan diberi
+pesan yang jujur. Dialog wizard-nya belum ada (fase 6).
+
+### [P2] Regresi path di `clipper_core.py` membatalkan seluruh `clipper_paths.py`
+
+Sudah diperbaiki di commit `d08c45b` (fase-5a). Dicatat di sini karena
+menunjukkan Fase 1 punya lubang: blok legacy di baris ~125 menimpa alias yang
+sudah benar di baris ~58. Detail lengkap ada di pesan commit tersebut.
+
+Pelajaran: **nilai yang benar diimport time belum tentu nilai yang dipakai.**
+Test alias di Fase 1 membaca `c.TEMP_DIR` dan membandingkannya dengan
+`temp_dir()` - keduanya sama saat itu, karena baris 135 belum dievaluasi.
+Yang diperiksa harus urutan evaluasinya, bukan hanya nilai akhirnya.
+
+### [P3] Nomor versi keras masih di empat tempat setelah `clipper_version.py` dibuat
+
+`v1.2.0` di: judul window (`clipper_gui_modern.py`), badge Streamlit (`app.py`),
+footer Gradio (`clipper_web.py`). Yang keempat: `clipper_web.py` menulis
+`{APP_VERSION}` di dalam string biasa (bukan f-string) - jadi placeholder-nya
+ditampilkan apa adanya ke user, dan ruff tidak menangkapnya.
+
+Semua diperbaiki di fase 5, plus test struktural lewat AST untuk kelas bug
+tersebut.
+
+### [P4] `setup_pc_baru.bat` sudah usang
+
+Di root, masih menyebut `python clipper_gui_modern.py` dan mengecek Node.js
+(yang sudah tidak relevan - yt-dlp sekarang lewat pip). Digantikan
+`installer/install.bat`. **Belum dihapus** karena masih mungkin dipakai user;
+TODO(owner).

@@ -20,6 +20,7 @@ if "google.colab" in sys.modules:
     )
 
 from clipper_legal import SUBTITLE_FONT_DEFAULT
+from clipper_version import APP_VERSION
 from clipper_paths import temp_dir
 from clipper_core import (
     TEMPLATES, RENDER_PRESETS, GEMINI_PROMPT, UA,
@@ -472,9 +473,9 @@ def build_ui():
                     outputs=[process_status, process_log, output_gallery]
                 )
 
-        gr.Markdown("""
+        gr.Markdown(f"""
         ---
-        **YT Short Clipper v1.2.0** — [GitHub](https://github.com/Chukie99/yt-short-clipper-offline) | Made with ❤️
+        **YT Short Clipper v{APP_VERSION}** — [GitHub](https://github.com/Chukie99/yt-short-clipper-offline)
         """)
 
     return demo

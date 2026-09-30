@@ -12,7 +12,8 @@ from clipper_core import (
     safe_generate_content, download_youtube, process_single_video,
     tts_generate_hook, time_str_to_seconds, get_ytdlp_path,
 )
-from clipper_legal import SUBTITLE_FONT_DEFAULT
+from clipper_legal import SUBTITLE_FONT_DEFAULT, legal_summary_for_ui
+from clipper_version import APP_VERSION, python_support_text
 from clipper_paths import temp_dir
 from clipper_ai import build_prompt
 
@@ -317,14 +318,14 @@ class VideoItem(ctk.CTkFrame):
 
 class App(ctk.CTk):
     def __init__(self):
-        super().__init__(); self.title("YT Short Clipper v1.2.0"); self.geometry("1100x850"); 
+        super().__init__(); self.title(f"YT Short Clipper v{APP_VERSION}"); self.geometry("1100x850"); 
         ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
         de = check_dependencies(); self.dependency_failed = len(de) > 0
         self.config = load_config(); self.v_items = []; self.proc = False; self.proc_lock = threading.Lock()
         self.grid_columnconfigure(0, weight=1); [self.grid_rowconfigure(i, weight=0) for i in range(6)]; self.grid_rowconfigure(6, weight=1)
         m = ctk.CTkFrame(self, height=40, fg_color="#FFF7F0", corner_radius=0); m.grid(row=0, column=0, sticky="ew"); m.grid_columnconfigure(0, weight=1)
         ctk.CTkButton(m, text="⚙️ Settings", command=self.open_settings, fg_color="transparent", hover_color="#F0DDD2").pack(side="left", padx=10, pady=5)
-        ctk.CTkButton(m, text="ℹ️ About", command=lambda: messagebox.showinfo("About", "YT Short Clipper v1.2.0\nAI-powered video segment clipper.\n\nFeatures: Templates, Auto-split, Queue Persist, Subtitle Animation, End Cards"), fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
+        ctk.CTkButton(m, text="ℹ️ About", command=self.show_about, fg_color="transparent", hover_color="#F0DDD2").pack(side="right", padx=10, pady=5)
         ctk.CTkLabel(self, text="YT Shorts Clipper Pro", font=("Arial", 26, "bold"), text_color="#fff").grid(row=1, column=0, pady=15)
         f_l = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10); f_l.grid(row=2, column=0, padx=30, pady=5, sticky="ew"); f_l.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(f_l, text="🎬 Link YouTube:", font=("Arial", 14, "bold"), text_color="#2B2D42").pack(side="left", padx=(15,10), pady=10)
@@ -371,6 +372,32 @@ class App(ctk.CTk):
         except Exception:
             _do()
     def flush(self): pass
+    def show_about(self):
+        """Dialog About: versi, runtime, dan status lisensi aset.
+
+        Jumlah dan isi aset lisensi diambil dari clipper_legal, bukan ditulis
+        manual di sini — supaya About tidak pernah berbohoh tentang apa yang
+        ikut installer.
+        """
+        legal = legal_summary_for_ui()
+        bundled = legal["bundled"] or ["(tidak ada aset ter-bundle)"]
+        external = legal["external"] or ["(tidak ada)"]
+        text = (
+            f"YT Short Clipper Pro v{APP_VERSION}\n"
+            f"{python_support_text()}\n\n"
+            "AI-powered video segment clipper.\n\n"
+            f"Lisensi aplikasi: {legal['app_license']}\n"
+            f"  {legal['copyright']}\n\n"
+            f"Aset yang ikut installer ({len(bundled)}):\n"
+            + "\n".join(f"  - {a['name']} - {a['license']}" for a in bundled)
+            + f"\n\nTidak dikemas, harus dipasang terpisah ({len(external)}):\n"
+            + "\n".join(f"  - {a['name']} - {a['license']}" for a in external)
+            + "\n\n"
+            "Analisis AI memakai layanan cloud (transkripsi tetap offline).\n"
+            "Pastikan Anda berhak mengunduh dan mempublikasikan ulang video."
+        )
+        messagebox.showinfo("Tentang", text)
+
     def open_settings(self): SettingsDialog(self, self.config, self.on_settings_save).grab_set()
     def on_settings_save(self, nc): self.config = nc; save_config(nc); [setattr(it, 'config', nc) for it in self.v_items]; [it.update_ai_button() for it in self.v_items]
     def add_video_item(self): i = len(self.v_items); it = VideoItem(self.scr, i, self.remove_video_item, self.log, self.config, lambda: self.l_var.get()); it.grid(row=i, column=0, pady=8, padx=15, sticky="ew"); self.v_items.append(it)

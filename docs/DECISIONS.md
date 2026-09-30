@@ -361,3 +361,111 @@ sendiri. Yang bisa dan harus dilakukan kode sekarang adalah memastikan tidak ada
 **keraguan** yang tersembunyi: file ditandai di THIRD_PARTY_NOTICES.md sebagai
 "provenance tidak diketahui", dan test menjaga agar tidak ada aset terlarang yang
 ter-kemas diam-diam.
+
+---
+
+## [D015] Model whisper dan ffmpeg tidak dibekukan ke dalam installer
+
+**Konteks.** Untuk produk yang dijual, "sekali klik langsung jalan" itu nilai
+jual. Bekukan semua dependensi ke dalam EXE kelihatan seperti cara tercepat
+mencapainya.
+
+**Keputusan.** Empat hal sengaja TIDAK dibekukan: model faster-whisper, ffmpeg,
+ffprobe, dan yt-dlp. Semuanya dipasang atau diunduh saat runtime.
+
+**Alasan per item:**
+
+- **Model faster-whisper** (1.5-3 GB per model). Dibekukan berarti satu model
+  tertentu yang pasti cepat basi, dan ukurannya membuat installer masuk akal
+  untuk diunduh. Model yang di-cache di %LOCALAPPDATA% milik user juga dipakai
+  ulang saat update - pembekuan justru membuang keuntungan itu.
+- **ffmpeg/ffprobe.** Membawa kewajiban LGPL/GPL. Dipasang terpisah juga
+  membuat versi yang dipakai bisa dilihat user (`ffmpeg -version`), yang mustahil
+  kalau dibekukan di dalam EXE.
+- **yt-dlp.** Diperbarui hampir setiap minggu karena YouTube rutin mematahkan
+  ekstraktor. Versi beku = produk rusak dalam hitungan minggu.
+
+**Konsekuensi yang diterima.** Produk ini bukan "sekali klik, langsung jalan".
+Installer memeriksa prasyarat dan menawarkan memasangnya, tapi langkah manual
+tetap ada. README ditulis jujur soal ini, karena klaim yang tidak benar
+terasembunyi jadi laporan bug.
+
+`installer/install.ps1` sengaja tidak mengunduh executable tanpa bertanya.
+Installer yang mengunduh binary dari internet tanpa ditanya terlihat seperti
+malware, dan sekali user meragukan installer, mereka tidak akan menyerahkan
+data-nya.
+
+---
+
+## [D016] Instalasi pakai .ps1 + venv, bukan Inno Setup
+
+**Konteks.** Produk ini dijual, jadi installer berarti pengalaman yang baik, dan
+biasanya itu berarti `setup.exe` dari Inno Setup atau NSIS.
+
+**Keputusan.** Installer pertama adalah `installer/install.ps1` (dipanggil
+`install.bat` untuk klik dua kali). Belum `.msi`.
+
+**Alasan.** Inno Setup menambah satu tool eksternal, satu file installer binary
+yang harus dibangun, dan satu permukaan kegagalan baru - semua itu sebelum
+kita punya build EXE yang verified. Urutannya: pastikan isi bundle benar dulu,
+baru bungkus. `.msi` tanpa hasil yang sudah terbukti hanya menambah masalah
+yang belum bisa didiagnosis.
+
+**Kenapa venv, bukan `pip install` ke system Python.** Modul aplikasi butuh numpy,
+mediapipe, ctranslate2 - semuanya punya wheel native. Menginstal ke system
+Python bisa merusak instalasi Python milik user untuk program lain. Venv
+isolating: uninstall = hapus folder.
+
+**Idempoten.** Dijalankan dua kali tidak merusak apa pun: setiap langkah cek
+`Test-Path` dulu, dan `Start-Transcript` menulis log ke `%LOCALAPPDATA%` supaya
+user bisa lapor masalah dengan bukti.
+
+**Konsekuensi yang diterima.** `.ps1` bisa diblokir execution policy kantor.
+`install.bat` menyelesaikannya dengan `-ExecutionPolicy Bypass`, tapi kalau
+perusahaan mengunci PowerShell sepenuhnya, `.msi` tetap dibutuhkan.
+TODO(owner) untuk fase berikutnya.
+
+---
+
+## [D017] Font berlisensi komersial ditutup dengan gerbang, bukan hanya dihapus
+
+Kelanjutan [D011]. Menghapus `KOMIKAX_.ttf` dari repo sudah dilakukan, tapi
+"dihapus" adalah keadaan saat ini, bukan jaminan. Build script bisa berubah,
+font bisa ditambahkan tanpa sadar, dan `build_exe.py` yang lama menyalin seluruh
+folder `fonts/`.
+
+**Keputusan.** Tiga lapis:
+
+1. `clipper_legal.py` jadi satu sumber kebenaran: aset mana yang boleh
+   dibundel, mana yang terlarang, mana yang eksternal.
+2. `verify_build()` di `build_exe.py` gagal dengan pesan jelas kalau aset
+   terlarang sampai masuk bundle. Bukan warning.
+3. `tests/test_legal.py` memeriksa setiap font di repo punya lisensi
+   redistribusi yang terbukti - bukan hanya "bukan KOMIKAX".
+
+**Alasan gate di build, bukan hanya di test.** Test hanya jalan kalau
+siapa pun menjalankan. Gate di build jalan setiap kali rilis. Kalau
+`verify_build()` cuma memberi warning, orang akan melewatkannya di tengah
+build yang lama; kalau exit code-nya bukan nol, tidak.
+
+---
+
+## [D018] Placeholder yang tidak ter-render adalah bug kelas, bukan satuecase
+
+**Konteks.** `clipper_web.py` menulis teks versi di dalam string biasa,
+bukan f-string. Ruff tidak menangkapnya. Test biasa tidak menangkapnya. User
+membaca teks literal itu di footer aplikasi.
+
+**Keputusan.** Test struktural lewat AST yang mencari string `Constant` berisi
+`{APP_VERSION}` atau `{APP_NAME}`. String di dalam f-string adalah `JoinedStr`
+di AST, jadi keduanya bisa dibedakan secara andal.
+
+**Kenapa ini penting lebih dari sekadar tampilan.** Ini kelas bug yang muncul
+setiap kali ada nilai yang dipindah ke "satu sumber kebenaran" - dan memindahkan
+nomor versi ke `clipper_version.py` justru memperbanyak tempat yang harus
+benar. Test struktural menutup kelas bug ini, bukan hanya satu kasusnya.
+
+**Efek samping yang ikut ditemukan.** `v1.2.0` masih ada di empat tempat
+setelah `clipper_version.py` dibuat: judul window, badge Streamlit, footer
+Gradio, dan pesan build. Sekarang semuanya membaca dari satu modul, dan ada
+test yang gagal kalau angka keras muncul lagi di teks yang tampil ke user.

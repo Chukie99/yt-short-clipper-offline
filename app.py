@@ -25,6 +25,7 @@ if str(REPO_DIR) not in sys.path:
 
 from clipper_legal import SUBTITLE_FONT_DEFAULT
 from clipper_paths import DATA_DIR, temp_dir
+from clipper_version import APP_VERSION
 from clipper_core import (
     TEMPLATES, RENDER_PRESETS, GEMINI_PROMPT, UA,
     load_config, check_dependencies, list_available_fonts,
@@ -130,7 +131,7 @@ def setup_ngrok(authtoken, port=8501):
 # ============================================================
 def render_sidebar():
     with st.sidebar:
-        st.image("https://img.shields.io/badge/YT_Short_Clipper-v1.2.0-blue?style=for-the-badge", use_container_width=True)
+        st.image(f"https://img.shields.io/badge/YT_Short_Clipper-v{APP_VERSION}-blue?style=for-the-badge", use_container_width=True)
         st.markdown("---")
 
         # --- Ngrok ---

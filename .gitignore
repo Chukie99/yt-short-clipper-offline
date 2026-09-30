@@ -35,3 +35,4 @@ vendor/opticlone/.cache/
 # HF cache
 .cache/huggingface/
 
+.claude-commit-msg.txt
