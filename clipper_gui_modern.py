@@ -7,7 +7,7 @@ from pathlib import Path
 
 from clipper_core import (
     _valid_youtube_url,
-    BASE_DIR, TEMP_DIR, OUTPUT_DIR, CONFIG_FILE,
+    RESOURCE_DIR, TEMP_DIR, OUTPUT_DIR,
     TEMPLATES, RENDER_PRESETS, DEFAULT_CONFIG, GEMINI_PROMPT, UA,
     load_config, save_config, check_dependencies, list_available_fonts,
     get_safe_id, save_queue_state, load_queue_state, clear_queue_state,
@@ -21,6 +21,7 @@ from clipper_core import (
     QUEUE_STATE_FILE, VOICEBOX_API, IS_COLAB,
     get_ffmpeg_path, get_ytdlp_path, get_detector_path, setup_directories,
 )
+from clipper_paths import temp_dir, resource_file
 
 import customtkinter as ctk
 # --- Pastel palette (v1.0.0 Easy Use) ---
@@ -116,7 +117,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def preview_subtitle(self):
         try:
             font_name = self.f_var.get()
-            font_path = str(BASE_DIR / "fonts" / font_name)
+            font_path = str(RESOURCE_DIR / "fonts" / font_name)
             if not os.path.exists(font_path):
                 font_path = "C:/Windows/Fonts/impact.ttf"
             tpl_name = self.tpl_var.get()
@@ -309,7 +310,7 @@ class VideoItem(ctk.CTkFrame):
                         self.thumb_var.set(False)
                     vhs = s.get("voice_hook_script","")
                     if vhs:
-                        hook_path = TEMP_DIR / f"voicehook_{int(time.time())}.mp3"
+                        hook_path = temp_dir() / f"voicehook_{int(time.time())}.mp3"
                         self.log_func(f"\n🎤=== VOICE HOOK SCRIPT ===\n{vhs}\n==========================")
                         if tts_generate_hook(vhs, hook_path, config=self.config, log_func=self.log_func):
                             self.vh_var.set(str(hook_path))
@@ -393,16 +394,18 @@ class App(ctk.CTk):
                 self.log("❌ Link tidak valid. Harus https:// YouTube URL.")
                 return
             self.log("[#] Fetching metadata...")
+            tmp = temp_dir()
+            tmp.mkdir(parents=True, exist_ok=True)
             vid_id = get_safe_id(link)
             sid = vid_id
-            raw_ytdlp = get_ytdlp_path().strip().strip('"').strip("'")
+            raw_ytdlp = get_ytdlp_path()
             cp = self.config.get("cookies_path", "")
-            base = [raw_ytdlp, "--user-agent", UA, "--extractor-args", "youtube:player_client=tv,web_creator,mediaconnect", "--skip-download", "--write-info-json", "-o", f"{TEMP_DIR}/{sid}_full", link]
+            base = [raw_ytdlp, "--user-agent", UA, "--extractor-args", "youtube:player_client=tv,web_creator,mediaconnect", "--skip-download", "--write-info-json", "-o", f"{tmp}/{sid}_full", link]
             if cp and os.path.exists(cp):
                 idx = base.index("-o")
                 base[idx:idx] = ["--cookies", str(cp)]
             subprocess.run(base, capture_output=True, timeout=30)
-            info_f = TEMP_DIR / f"{sid}_full.info.json"
+            info_f = tmp / f"{sid}_full.info.json"
             title, desc = sid, ""
             if info_f.exists():
                 with open(info_f, "r", encoding="utf-8") as f:
@@ -410,7 +413,7 @@ class App(ctk.CTk):
                     title = m.get("title", sid)
                     desc = m.get("description","")[:500]
             self.log(f"[#] Video: {title}")
-            base_subs = [raw_ytdlp, "--user-agent", UA, "--extractor-args", "youtube:player_client=tv,web_creator,mediaconnect", "--skip-download", "--write-auto-subs", "--sub-langs", "id,en", "--convert-subs", "srt", "-o", f"{TEMP_DIR}/{sid}_full", link]
+            base_subs = [raw_ytdlp, "--user-agent", UA, "--extractor-args", "youtube:player_client=tv,web_creator,mediaconnect", "--skip-download", "--write-auto-subs", "--sub-langs", "id,en", "--convert-subs", "srt", "-o", f"{tmp}/{sid}_full", link]
             if cp and os.path.exists(cp):
                 idx2 = base_subs.index("-o")
                 base_subs[idx2:idx2] = ["--cookies", str(cp)]
@@ -420,7 +423,7 @@ class App(ctk.CTk):
                 self.log("[!] Subtitle tidak tersedia, lanjut tanpa transkrip.")
                 import logging
                 logging.getLogger("clipper").debug("Subtitle download failed: %s", e)
-            orig = TEMP_DIR / f"{sid}_full.mp4"
+            orig = tmp / f"{sid}_full.mp4"
             if not orig.exists():
                 self.log("[#] Downloading...")
                 try:
@@ -431,9 +434,9 @@ class App(ctk.CTk):
                     self.log(f"❌ {str(e)}")
                     return
             # prefer id, then en, then any
-            srt_id = list(TEMP_DIR.glob(f"{sid}_full.id.srt")) + list(TEMP_DIR.glob(f"{sid}_full.id.vtt"))
-            srt_en = list(TEMP_DIR.glob(f"{sid}_full.en.srt")) + list(TEMP_DIR.glob(f"{sid}_full.en.vtt"))
-            srt_any = list(TEMP_DIR.glob(f"{sid}_full.*.srt")) + list(TEMP_DIR.glob(f"{sid}_full.*.vtt"))
+            srt_id = list(tmp.glob(f"{sid}_full.id.srt")) + list(tmp.glob(f"{sid}_full.id.vtt"))
+            srt_en = list(tmp.glob(f"{sid}_full.en.srt")) + list(tmp.glob(f"{sid}_full.en.vtt"))
+            srt_any = list(tmp.glob(f"{sid}_full.*.srt")) + list(tmp.glob(f"{sid}_full.*.vtt"))
             srt = srt_id or srt_en or srt_any
             txt = ""
             if srt:
@@ -478,7 +481,7 @@ class App(ctk.CTk):
                 it.thumb_var.set(False)
             vhs = s.get("voice_hook_script","")
             if vhs:
-                hook_path = TEMP_DIR / f"voicehook_{int(time.time())}.mp3"
+                hook_path = temp_dir() / f"voicehook_{int(time.time())}.mp3"
                 self.log(f"\n🎤=== VOICE HOOK SCRIPT ===\n{vhs}\n==========================")
                 if tts_generate_hook(vhs, hook_path, config=self.config, log_func=self.log):
                     it.vh_var.set(str(hook_path))

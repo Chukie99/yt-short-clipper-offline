@@ -3,20 +3,57 @@ clipper_core.py — Core logic for YT Short Clipper.
 Semua fungsi video processing, AI analysis, drawing, dll.
 TIDAK bergantung pada CustomTkinter/Tkinter — bisa di-import di headless (Colab).
 """
-import os, sys, subprocess, threading, time, json, traceback, re, requests, logging
+import os, sys, threading, time, json, traceback, re, requests, logging
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List
 from pathlib import Path
 from dotenv import load_dotenv
 
+from clipper_paths import (
+    APP_NAME, APP_VERSION, CONFIG_SCHEMA_VERSION,
+    RESOURCE_DIR, temp_dir, log_dir, bgm_dir, config_file,
+    queue_state_file,
+    ensure_dirs, prepend_bin_to_path, default_output_dir, output_dir_from_config,
+    migrate_legacy_config, adopt_legacy_output_dir, copy_legacy_queue_state,
+)
+from clipper_run import (
+    run_command, run_streaming, safe_filename, quote_for_filtergraph,
+    CommandError,
+)
+
+# .env hanya dibaca di dev (repo). Saat frozen tidak ada .env — API key user
+# disimpan di %APPDATA% lewat config.json, bukan dari environment.
 load_dotenv()
 
+# ---------- Paths (lihat clipper_paths.py + AUDIT.md bagian A) ----------
+# RESOURCE_DIR = hanya baca (bin, fonts, backsound, vendor)
+# DATA_DIR     = milik user (%LOCALAPPDATA%/YTShortClipperPro)
+# TEMP_DIR/CONFIG_FILE/QUEUE_STATE_FILE/logging -> DATA_DIR
+# OUTPUT_DIR   -> ~/Videos/YTShortClipperPro, bisa diubah lewat config["output_dir"]
+#
+# PENTING: semua penulisan memakai accessor (temp_dir(), config_file(), ...) yang
+# resolve saat dipanggil, BUKAN constant snapshot. Constant di bawah hanya
+# kept-as-alias supaya call site lama yang meng-import BASE_DIR/TEMP_DIR tidak
+# langsung rusak, dan hanya dibaca — bukan ditulis.
+BASE_DIR = RESOURCE_DIR          # alias baca-saja
+TEMP_DIR = temp_dir()
+CONFIG_FILE = config_file()
+QUEUE_STATE_FILE = queue_state_file()
+OUTPUT_DIR = default_output_dir()   # di-resolve per-run lewat _resolve_output_dir()
+
+ensure_dirs()
+prepend_bin_to_path()
+_MIGRATION = migrate_legacy_config()
+copy_legacy_queue_state()
+
 # ---------- Logging Setup ----------
-LOG_FILE = Path(__file__).parent / "error.log"
+# Rotating, supaya log tidak tumbuh tanpa batas di laptop user.
+from logging.handlers import RotatingFileHandler
+LOG_FILE = log_dir() / "clipper.log"
 logger = logging.getLogger("clipper")
 logger.setLevel(logging.DEBUG)
 _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-_fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+_fh = RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
 _fh.setLevel(logging.DEBUG)
 _fh.setFormatter(_fmt)
 _sh = logging.StreamHandler()
@@ -24,6 +61,8 @@ _sh.setLevel(logging.WARNING)
 _sh.setFormatter(_fmt)
 logger.addHandler(_fh)
 logger.addHandler(_sh)
+if _MIGRATION.get("migrated_from"):
+    logger.info("Migrated legacy config from %s", _MIGRATION["migrated_from"])
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -55,26 +94,45 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ---------- Platform-Aware Binary Paths ----------
 def get_ffmpeg_path():
-    """Return ffmpeg command — bundled on Windows, system on Linux/Colab."""
+    """Return ffmpeg command — bundled di bin/ saat ada, PATH sebagai fallback."""
     if IS_COLAB or sys.platform != "win32":
         return "ffmpeg"
-    local = BASE_DIR / "bin" / "ffmpeg.exe"
+    local = RESOURCE_DIR / "bin" / "ffmpeg.exe"
     return str(local) if local.exists() else "ffmpeg"
 
 def get_ytdlp_path():
-    """Return yt-dlp command — bundled on Windows, system on Linux/Colab."""
+    """Return yt-dlp command — bundled di bin/ saat ada, PATH sebagai fallback.
+
+    Tidak pernah dikembalikan dalam tanda kutip: pemanggil harus pakai list-args
+    (lihat run_command di clipper_run.py). Tanda kutip literal pernah jadi alasan
+    caller resort ke shell string.
+    """
     if IS_COLAB or sys.platform != "win32":
         return "yt-dlp"
-    local = BASE_DIR / "bin" / "yt-dlp.exe"
-    return f'"{str(local)}"' if local.exists() else "yt-dlp"
+    local = RESOURCE_DIR / "bin" / "yt-dlp.exe"
+    return str(local) if local.exists() else "yt-dlp"
 
 def get_detector_path():
-    """Return path to MediaPipe detector model."""
-    return str(BASE_DIR / "bin" / "detector.tflite")
+    """Return path to MediaPipe detector model (read-only resource)."""
+    return str(RESOURCE_DIR / "bin" / "detector.tflite")
 
 # ---------- Overridable directory setup ----------
+def _resolve_output_dir(config=None):
+    """Output dir aktif untuk (config) — mkdir aman."""
+    d = output_dir_from_config(config or load_config())
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error("Output dir %s tidak bisa dibuat (%s), fallback ke default", d, e)
+        d = default_output_dir()
+        d.mkdir(parents=True, exist_ok=True)
+    return d
+
 def setup_directories(base_dir=None, temp_dir=None, output_dir=None, config_file=None):
-    """Override default directories (e.g. for Google Drive on Colab)."""
+    """Override default directories (e.g. for Google Drive on Colab).
+
+    Hanya dipakai di Colab/web — di desktop path diambil dari clipper_paths.
+    """
     global BASE_DIR, TEMP_DIR, OUTPUT_DIR, CONFIG_FILE
     if base_dir:
         BASE_DIR = Path(base_dir)
@@ -124,6 +182,8 @@ DEFAULT_CONFIG = {
     "whisper_provider": "Local (faster-whisper)",
     "whisper_model": "openai/whisper-1",
     "silence_threshold": 0.6,
+    # --- Output & folder (v2) ---
+    "output_dir": "",   # kosong = ~/Videos/YTShortClipperPro
     # --- TTS (OptiClone only) ---
     "tts_provider": "auto",
     "tts_reference_path": "",
@@ -137,6 +197,10 @@ RENDER_PRESETS = {
     "normal": {"crf": 18, "preset": "fast",       "label": "Normal (Seimbang)"},
     "high":   {"crf": 15, "preset": "slow",       "label": "High (Kualitas)"},
 }
+
+# Clip di bawah ini tidak masuk akal sebagai Shorts dan biasanya berarti user salah
+# isi field waktu. Ditolak sebelum proses dimulai (AUDIT.md G3).
+MIN_CLIP_SECONDS = 1.0
 
 TEMPLATES = {
     "cinematic": {
@@ -201,8 +265,6 @@ TEMPLATES = {
     },
 }
 
-QUEUE_STATE_FILE = TEMP_DIR / "queue_state.json"
-
 GEMINI_PROMPT = """Kamu adalah **Viral Content Analyst AI** — spesialis menemukan segmen VIRAL dari video edukasi, podcast, wawancara, atau ceramah.
 
 ## PRINSIP UTAMA:
@@ -262,19 +324,24 @@ Keluarakan HANYA JSON array."""
 
 def load_config():
     config = DEFAULT_CONFIG.copy()
-    if CONFIG_FILE.exists():
+    cfg_path = config_file()
+    if cfg_path.exists():
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(cfg_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
                     file_config = json.loads(content)
-                    # ignore empty strings from old config — fall back to env/default
-                    for k, v in list(file_config.items()):
-                        if isinstance(v, str) and v.strip() == "":
-                            file_config.pop(k)
+                    if not isinstance(file_config, dict):
+                        raise json.JSONDecodeError("config bukan objek", "", 0)
                     config.update(file_config)
-        except (json.JSONDecodeError, IOError):
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            # Config rusak: pakai default, jangan crash, jangan menimpa file user.
+            logger.warning("config.json tidak bisa dibaca (%s) — pakai default", e)
+    # v1 -> v2: config lama menaruh output di BASE_DIR/output. Kalau user sudah
+    # punya video di sana, jadikan default supaya tidak "hilang" setelah update.
+    if int(config.get("config_schema_version", 1) or 1) < 2:
+        config = adopt_legacy_output_dir(config)
+        config["config_schema_version"] = 2
     if not (config.get("gemini_api_key") or "").strip():
         config["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
     if not (config.get("openrouter_api_key") or "").strip():
@@ -284,54 +351,54 @@ def load_config():
     return config
 
 def save_config(config):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
+    """Tulis config ke DATA_DIR. Atomic: tulis .tmp dulu lalu replace."""
+    ensure_dirs()
+    cfg = dict(config)
+    cfg["config_schema_version"] = CONFIG_SCHEMA_VERSION
+    cfg_path = config_file()
+    tmp = cfg_path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    tmp.replace(cfg_path)
 
 def check_dependencies():
+    """Cek tool eksternal + library wajib. Kembalikan list pesan siap tampil.
+
+    dipakai juga untuk first-run wizard (Fase 5).
+    """
     errors = []
-    bundled_bin = BASE_DIR / "bin"
-    if bundled_bin.exists() and str(bundled_bin) not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = str(bundled_bin) + os.pathsep + os.environ["PATH"]
-    try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        errors.append("ffmpeg.exe tidak ditemukan di folder bin/")
-        logger.debug("ffmpeg check: %s", e)
-    try:
-        subprocess.run(["yt-dlp", "--version"], capture_output=True, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        errors.append("yt-dlp.exe tidak ditemukan di folder bin/")
-        logger.debug("yt-dlp check: %s", e)
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as e:
-        errors.append("faster-whisper tidak terinstall.")
-        logger.debug("faster-whisper import: %s", e)
-    try:
-        import cv2
-    except ImportError as e:
-        errors.append("opencv-python tidak terinstall.")
-        logger.debug("opencv import: %s", e)
-    try:
-        import numpy
-    except ImportError as e:
-        errors.append("numpy tidak terinstall.")
-        logger.debug("numpy import: %s", e)
+    prepend_bin_to_path()
+    for label, exe in [("ffmpeg", get_ffmpeg_path()), ("yt-dlp", get_ytdlp_path())]:
+        try:
+            run_command([exe, "-version"], timeout=15)
+        except CommandError as e:
+            errors.append(f"{label} tidak tersedia: {e}")
+        except Exception as e:
+            errors.append(f"{label} gagal dicek: {e}")
+            logger.debug("%s check: %s", label, e)
+    for label, mod in [("faster-whisper", "faster_whisper"), ("opencv-python", "cv2"), ("numpy", "numpy")]:
+        try:
+            __import__(mod)
+        except ImportError as e:
+            errors.append(f"{label} tidak terinstall ({e}).")
+            logger.debug("%s import: %s", label, e)
+    detector = RESOURCE_DIR / "bin" / "detector.tflite"
+    if not detector.exists():
+        errors.append("bin/detector.tflite hilang — face tracking tidak akan jalan. Install ulang aplikasi.")
     return errors
 
 def list_available_fonts():
+    """Font yang benar-benar ada di RESOURCE_DIR, plus fallback sistem."""
     fonts = []
-    local_fonts = BASE_DIR / "fonts"
+    local_fonts = RESOURCE_DIR / "fonts"
     if local_fonts.exists():
-        for f in local_fonts.glob("*.[tT][tT][fF]"):
-            fonts.append(f.name)
-        for f in local_fonts.glob("*.[oO][tT][fF]"):
-            fonts.append(f.name)
-    system_fonts = ["Montserrat-Bold.ttf", "arialbd.ttf", "Impact.ttf"]
-    for f in system_fonts:
+        for pattern in ("*.ttf", "*.otf"):
+            for f in local_fonts.glob(pattern):
+                fonts.append(f.name)
+    for f in ["Montserrat-Bold.ttf", "arialbd.ttf", "Impact.ttf"]:
         if f not in fonts:
             fonts.append(f)
-    return sorted(list(set(fonts)))
+    return sorted(set(fonts))
 
 def get_safe_id(link):
     vid_id_match = re.search(r"(?:v=|\/shorts\/|\/embed\/|\/v\/|youtu\.be\/|\/watch\?v=|\/watch\?.+&v=)([\w-]+)", link)
@@ -350,21 +417,24 @@ def save_queue_state(segments, config):
         "end_card": config.get("end_card", True),
         "end_card_text": config.get("end_card_text", "Follow for more!"),
     }
-    tmp = QUEUE_STATE_FILE.with_suffix(".tmp")
+    qs = queue_state_file()
+    tmp = qs.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(QUEUE_STATE_FILE)
+    tmp.replace(qs)
 
 def load_queue_state():
-    if not QUEUE_STATE_FILE.exists():
+    qs = queue_state_file()
+    if not qs.exists():
         return None
     try:
-        return json.loads(QUEUE_STATE_FILE.read_text(encoding="utf-8"))
+        return json.loads(qs.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, IOError):
         return None
 
 def clear_queue_state():
-    if QUEUE_STATE_FILE.exists():
-        QUEUE_STATE_FILE.unlink(missing_ok=True)
+    qs = queue_state_file()
+    if qs.exists():
+        qs.unlink(missing_ok=True)
 
 def draw_end_card(img_pil, draw, font, target_w, target_h, text, progress):
     if progress <= 0 or progress >= 1:
@@ -406,30 +476,19 @@ def add_subtitle_animation(draw, text, font, x, y, fill, outline_w, frame_num, f
         draw.text((x, y), text, font=anim_font, fill=(*inactive_c, inactive_a), stroke_width=outline_w // 2, stroke_fill=(0, 0, 0, inactive_a // 2))
 
 def run_cmd(cmd, log_func=None):
-    """Run command safely. Accepts list (shell=False) or string (shell=True for legacy)."""
-    try:
-        if isinstance(cmd, (list, tuple)):
-            process = subprocess.Popen(list(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
-        else:
-            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace')
-        output = []
-        if process.stdout:
-            for line in process.stdout:
-                line = line.strip()
-                if line:
-                    output.append(line)
-                    if log_func and any(x in line.lower() for x in ["%", "fps", "speed", "time=", "download", "error", "failed"]):
-                        log_func(f"   > {line}")
-        process.wait()
-        if process.returncode != 0:
-            full_out = "\n".join(output[-15:])
-            err_lower = full_out.lower()
-            if "sign in to confirm" in err_lower or "cookies" in err_lower:
-                raise Exception("❌ Cookies YouTube expired. Export ulang cookies.txt dari browser:\n   1. Buka YouTube.com, login\n   2. Install extension 'Get cookies.txt'\n   3. Klik extension → Export\n   4. Simpan ke file .txt yang sama di Settings")
-            raise Exception(f"❌ Proses gagal (kode {process.returncode}). Detail:\n{full_out}")
-    except Exception as e:
-        logger.error("run_cmd failed: %s", e)
-        raise Exception(str(e)) from e
+    """DEPRECATED — pakai clipper_run.run_command(). Dipertahankan hanya sebagai
+    jembatan supaya call site lama jalan; menolak string sepenuhnya.
+
+    v1.2.0 versi fungsi ini menerima str dan menjalankan `shell=True`, yang membuat
+    aplikasi rentan command injection dari mana saja yang mengirim string
+    (AUDIT.md B1). String sekarang dilempar, bukan dieksekusi.
+    """
+    if isinstance(cmd, (str, bytes)):
+        raise TypeError(
+            "run_cmd() tidak menerima string. Gunakan run_command() dari "
+            "clipper_run.py dengan list argumen."
+        )
+    return run_command(cmd, log_func=log_func)
 
 
 def _valid_youtube_url(url: str) -> bool:
@@ -489,9 +548,13 @@ def safe_generate_content(config, contents, log_func=None):
     raise Exception(f"Gagal menghubungi {provider}.")
 
 def ensure_bgm(mood, log_func, config=None):
-    bgm_dir = BASE_DIR / "backsound"
-    bgm_dir.mkdir(exist_ok=True)
-    bgm_path = bgm_dir / f"{mood.lower()}.mp3"
+    """Cari file BGM untuk mood. Hanya menulis ke DATA_DIR (bukan folder aplikasi).
+
+    Cache sekali pakai: setelah `bgm/<mood>.mp3` ada, tidak ada request lagi.
+    """
+    bdir = bgm_dir()
+    bdir.mkdir(parents=True, exist_ok=True)
+    bgm_path = bdir / f"{mood.lower()}.mp3"
     if bgm_path.exists():
         return bgm_path
 
@@ -508,42 +571,34 @@ def ensure_bgm(mood, log_func, config=None):
                 if vids:
                     vids.sort(key=lambda x: x.get("duration", 999))
                     v_url = vids[0]["video_files"][0]["link"]
-                    r_v = requests.get(v_url, stream=True)
-                    temp_vid = bgm_dir / f"temp_{mood}.mp4"
+                    # AUDIT.md: request ini tidak punya timeout → bisa menggantung
+                    # selamanya dan menahan batch. Timeout 60s cukup untuk file video.
+                    r_v = requests.get(v_url, stream=True, timeout=60)
+                    r_v.raise_for_status()
+                    temp_vid = bdir / f"temp_{mood}.mp4"
                     with open(temp_vid, "wb") as f:
                         for chunk in r_v.iter_content(chunk_size=8192):
                             f.write(chunk)
                     ffmpeg_cmd = get_ffmpeg_path()
-                    run_cmd(f'{ffmpeg_cmd} -y -i "{temp_vid}" -vn -acodec mp3 "{bgm_path}"')
+                    # List-args, bukan f-string: temp_vid berisi nama mood yang
+                    # berasal dari AI/user (AUDIT.md B1).
+                    run_command(
+                        [ffmpeg_cmd, "-y", "-i", str(temp_vid), "-vn",
+                         "-acodec", "mp3", str(bgm_path)],
+                        timeout=120,
+                    )
                     temp_vid.unlink(missing_ok=True)
                     if bgm_path.exists():
                         log_func(f"[✅] Backsound {mood} dari Pexels berhasil.")
                         return bgm_path
         except Exception as e:
-            log_func(f"[⚠️] Pexels error: {str(e)}")
+            log_func(f"[⚠️] Pexels error: {e}")
+            logger.debug("pexels bgm fail: %s", e, exc_info=True)
 
-    # Fallback to YouTube search
-    log_func(f"[⚠️] PERINGATAN: BGM dari YouTube belum tentu bebas royalti. "
-             "Gunakan Pexels API key untuk BGM berlisensi aman, atau ganti BGM manual.")
-    search_map = {
-        "kocak": "Funny comedy background music no copyright",
-        "tegang": "Suspense cinematic background music no copyright",
-        "sedih": "Sad emotional background music no copyright",
-        "inspirasi": "Inspirational corporate background music no copyright",
-        "santai": "Chill lofi background music no copyright"
-    }
-    query = search_map.get(mood.lower(), "Chill background music no copyright")
-    log_func(f"[⚠️] BGM YouTube fallback beresiko copyright! Kosongkan Pexels key = pakai file lokal backsound/*.mp3 saja.")
-    log_func(f"[🎵] Fallback: Mencari backsound di YouTube (ytsearch1 — lisensi tidak dijamin!)...")
-    raw_ytdlp2 = get_ytdlp_path().strip().strip('"').strip("'")
-    try:
-        cmd2 = [raw_ytdlp2, "--no-update", "--user-agent", UA, "--match-filter", "duration < 300", "--extract-audio", "--audio-format", "mp3", "--output", str(bgm_path), f"ytsearch1:{query}"]
-        subprocess.run(cmd2, capture_output=True, text=True)
-        if bgm_path.exists():
-            log_func(f"[✅] Backsound {mood} berhasil di-download (⚠️ lisensi tidak dijamin).")
-            return bgm_path
-    except Exception as e:
-        log_func(f"[⚠️] Fallback error: {str(e)}")
+    log_func(
+        "[⚠️] BGM tidak ditemukan untuk mood ini. Pakai file lokal: "
+        f"taruh {mood.lower()}.mp3 di {bgm_dir()}, atau isi Pexels API key di Settings."
+    )
     return None
 
 def fetch_pexels_broll(keyword, pexels_api_key, output_dir):
@@ -818,34 +873,31 @@ def apply_sharpen(frame, strength=0.3):
     blurred = cv2.GaussianBlur(frame, (0, 0), 2.0)
     return cv2.addWeighted(frame, 1.0 + strength, blurred, -strength, 0)
 
-def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
-    ytdlp_path = get_ytdlp_path()
-    IS_COLAB = "google.colab" in sys.modules
+DOWNLOAD_TIMEOUT = 900  # detik per percobaan download; video 2 jam butuh ini
 
-    format_variants = [
-        '--extractor-args "youtube:player_client=android_vr" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
-        '--extractor-args "youtube:player_client=tv,web_creator,mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
-        '--extractor-args "youtube:player_client=mediaconnect" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"',
-        '--extractor-args "youtube:player_client=android_vr" -f "best"',
-        '--extractor-args "youtube:player_client=tv,mediaconnect" -f "bestvideo+bestaudio/best"',
-    ]
+def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
+    """Download satu video dengan beberapa strategi player client.
+
+    Semua perintah adalah list-args (shell=False) — lihat clipper_run.py.
+    `max_retries` sengaja = 5 karena ada tepat 5 strategi; slicing
+    `strategies[:max_retries]` berarti nilai di bawah 5 membuat strategi
+    terakhir tidak pernah dicoba.
+    """
+    ytdlp_exe = get_ytdlp_path()
 
     if not _valid_youtube_url(link):
         raise Exception("❌ Link tidak valid. Harus http(s) YouTube URL.")
-    raw_ytdlp = ytdlp_path.strip().strip('"').strip("'")
-    ytdlp_exe = raw_ytdlp
-
-    strategies = []
 
     cp = cookies_path
     base_args = ["--user-agent", UA, "--no-update", "--retries", "10", "--extractor-retries", "infinite", "--merge-output-format", "mp4"]
     if cp and Path(cp).exists():
-        log_func(f"[🍪] Using cookies: {cp}")
+        log_func(f"[🍪] Memakai cookies: {Path(cp).name}")
         base_args += ["--cookies", str(cp)]
     else:
-        log_func("[⚠️] No cookies file found, download may fail — isi cookies.txt di Settings biar gak kena 'Sign in to confirm'")
+        log_func("[⚠️] File cookies tidak ditemukan — download mungkin gagal. Isi cookies.txt di Settings agar tidak kena 'Sign in to confirm'.")
 
-    # format_variants as list-args
+    # Satu set per player client yang berbeda — urutan dari yang paling sering
+    # berhasil ke yang paling jarang (AUDIT.md: strategies[:max_retries] = 5).
     fmt_args_list = [
         ["--extractor-args", "youtube:player_client=android_vr", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"],
         ["--extractor-args", "youtube:player_client=tv,web_creator,mediaconnect", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"],
@@ -853,43 +905,61 @@ def download_youtube(link, output_path, cookies_path, log_func, max_retries=5):
         ["--extractor-args", "youtube:player_client=android_vr", "-f", "best"],
         ["--extractor-args", "youtube:player_client=tv,mediaconnect", "-f", "bestvideo+bestaudio/best"],
     ]
-    for fmt_args in fmt_args_list:
-        strategies.append([ytdlp_exe] + base_args + fmt_args + ["-o", str(output_path), link])
+    attempts = [[ytdlp_exe] + base_args + a + ["-o", str(output_path), link]
+                for a in fmt_args_list][:max_retries]
 
-    for i, cmd in enumerate(strategies[:max_retries], 1):
+    for i, cmd in enumerate(attempts, 1):
         try:
-            log_func(f"[⬇️] Download attempt {i}/{max_retries}...")
-            run_cmd(cmd, log_func=log_func)
+            log_func(f"[⬇️] Percobaan download {i}/{len(attempts)}...")
+            run_command(cmd, log_func=log_func, timeout=DOWNLOAD_TIMEOUT)
             if output_path.exists():
                 cap_check = cv2.VideoCapture(str(output_path))
                 h = int(cap_check.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 cap_check.release()
                 if h >= 480:
-                    log_func(f"[✅] Downloaded {h}p")
+                    log_func(f"[✅] Video terunduh, resolusi {h}p")
                     return True
-                else:
-                    log_func(f"[⚠️] Got only {h}p, retrying...")
-                    output_path.unlink(missing_ok=True)
-            else:
-                log_func("[⚠️] Output not created, retrying...")
-        except Exception as e:
-            err = str(e).lower()
-            if "challenge" in err or "sign in" in err or "cookies" in err:
-                log_func(f"[⚠️] Download blocked (attempt {i}), trying fallback...")
-            else:
-                log_func(f"[⚠️] Download error: {str(e)[:100]}")
-            if output_path.exists():
+                log_func(f"[⚠️] Resolusi cuma {h}p, coba strategi lain...")
                 output_path.unlink(missing_ok=True)
-    raise Exception("❌ Gagal mendownload video. Coba lagi atau gunakan cookies file.")
+            else:
+                log_func("[⚠️] File tidak terbentuk, coba strategi lain...")
+        except CommandError as e:
+            log_func(f"[⚠️] Percobaan {i} gagal: {str(e)[:160]}")
+            logger.warning("download attempt %d failed: %s", i, e)
+        except Exception as e:
+            log_func(f"[⚠️] Error download: {str(e)[:160]}")
+            logger.warning("download attempt %d error: %s", i, e, exc_info=True)
+        if output_path.exists():
+            output_path.unlink(missing_ok=True)
+    raise CommandError(
+        f"Gagal mendownload video setelah {len(attempts)} percobaan. "
+        "Penyebab yang paling sering: cookies.txt belum diisi atau video ini "
+        "membutuhkan login. Isi cookies di Settings lalu coba lagi."
+    )
 
 def get_audio_duration(file_path):
+    """Durasi audio via ffprobe. 0 kalau file rusak / ffprobe tidak ada.
+
+    AUDIT.md G7: sebelumnya hardcode "ffprobe" dan bergantung pada PATH yang
+    sudah di-prefix bin/. Sekarang memakai get_ffmpeg_path() yang berbasis lokasi.
+    """
     try:
-        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(file_path)]
-        result = subprocess.check_output(cmd).decode("utf-8").strip()
-        return float(result)
-    except (subprocess.CalledProcessError, ValueError, FileNotFoundError, OSError) as e:
+        probe = _ffprobe_path()
+        cmd = [probe, "-v", "error", "-show_entries", "format=duration",
+               "-of", "default=noprint_wrappers=1:nokey=1", str(file_path)]
+        result = run_command(cmd, timeout=30)
+        return float(result.stdout.strip())
+    except (CommandError, ValueError, OSError) as e:
         logger.debug("get_audio_duration fallback for '%s': %s", file_path, e)
         return 0
+
+def _ffprobe_path():
+    """ffprobe dari bin/ kalau ada, kalau tidak andalkan PATH."""
+    if not (IS_COLAB or sys.platform != "win32"):
+        local = RESOURCE_DIR / "bin" / "ffprobe.exe"
+        if local.exists():
+            return str(local)
+    return "ffprobe"
 
 VOICEBOX_API = None  # removed — pure OptiClone
 
@@ -1053,16 +1123,17 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
     if opts is None:
         opts = {}
     safe_id = get_safe_id(link)
-    clean_title = title.replace("[", "").replace("]", "")
-    safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in clean_title).strip()
-    if not safe_title:
-        safe_title = f"short_{safe_id}"
+    # safe_filename juga menyaring pemisah path — judul dari AI pernah bisa
+    # berisi "..\\" yang di versi lama menulis ke luar folder output (AUDIT.md G3).
+    safe_title = safe_filename(title.replace("[", "").replace("]", ""), fallback=f"short_{safe_id}")
     today_folder = time.strftime("%d-%m-%Y")
-    today_dir = OUTPUT_DIR / today_folder
-    today_dir.mkdir(exist_ok=True)
-    original = TEMP_DIR / f"{safe_id}_full.mp4"
-    trimmed = TEMP_DIR / f"{safe_id}_{int(start_sec)}_trim.mp4"
-    audio_wav = TEMP_DIR / f"{safe_id}_{int(start_sec)}_audio.wav"
+    out_root = _resolve_output_dir(opts.get("config"))
+    today_dir = out_root / today_folder
+    today_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir = temp_dir()
+    original = tmp_dir / f"{safe_id}_full.mp4"
+    trimmed = tmp_dir / f"{safe_id}_{int(start_sec)}_trim.mp4"
+    audio_wav = tmp_dir / f"{safe_id}_{int(start_sec)}_audio.wav"
     final_out = today_dir / f"{safe_title}.mp4"
     thumb_path = today_dir / f"{safe_title}.jpg"
     desc_path = today_dir / f"{safe_title}_desc.txt"
@@ -1091,6 +1162,17 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
     def update_status(text):
         if status_func:
             status_func(text)
+
+    # AUDIT.md G3: durasi negatif bikin `ffmpeg -t -30` yang gagal tanpa pesan
+    # yang jelas. Tolak di sini, sebelum ada file yang disentuh.
+    if end_sec <= start_sec:
+        msg = f"Rentang waktu tidak valid: mulai {start_sec}s, selesai {end_sec}s (harus selesai > mulai)."
+        log_func(f"[{safe_id}] ❌ {msg}")
+        return False, msg
+    if end_sec - start_sec < MIN_CLIP_SECONDS:
+        msg = f"Durasi segmen {end_sec - start_sec:.1f}s terlalu pendek (minimum {MIN_CLIP_SECONDS}s)."
+        log_func(f"[{safe_id}] ❌ {msg}")
+        return False, msg
 
     try:
         if not original.exists():
@@ -1169,7 +1251,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 smooth_cam_y = smooth_cam_y * (1 - CAM_ALPHA) + val_y * CAM_ALPHA
             return int(smooth_cam_x), int(smooth_cam_y)
 
-        font_path = str(BASE_DIR / "fonts" / selected_font)
+        font_path = str(RESOURCE_DIR / "fonts" / selected_font)
         if not os.path.exists(font_path):
             if sys.platform == "win32":
                 impact_path = "C:/Windows/Fonts/impact.ttf"
@@ -1178,12 +1260,13 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 # Linux/Colab fallback
                 for fallback in ["/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf",
                                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                                 str(BASE_DIR / "fonts" / "Montserrat-Bold.ttf")]:
+                                 str(RESOURCE_DIR / "fonts" / "Montserrat-Bold.ttf")]:
                     if os.path.exists(fallback):
                         font_path = fallback
                         break
-
-        font_path_ff = font_path.replace("\\", "/").replace(":", "\\\\:")
+        if not os.path.exists(font_path):
+            log_func(f"[{safe_id}] ⚠️  Font '{selected_font}' tidak ditemukan, pakai font bawaan PIL")
+            font_path = None
 
         try:
             pil_font = ImageFont.truetype(font_path, 65)
@@ -1191,7 +1274,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             pil_font_opini = ImageFont.truetype(font_path, 75)
         except Exception as e:
             log_func(f"[{safe_id}] ⚠️  Font '{font_path}' gagal load: {e}, pakai Montserrat-Bold")
-            fallback_font = str(BASE_DIR / "fonts" / "Montserrat-Bold.ttf")
+            fallback_font = str(RESOURCE_DIR / "fonts" / "Montserrat-Bold.ttf")
             if os.path.exists(fallback_font):
                 pil_font = ImageFont.truetype(fallback_font, 65)
                 pil_font_wm = ImageFont.truetype(fallback_font, 35)
@@ -1227,9 +1310,10 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
         log_func(f"[Hook] cover_duration={cover_duration:.2f}s, delay_ms={delay_ms}")
 
         auto_thumb_img = None
-        thumb_img_input_path = BASE_DIR / "input_thumbnail.jpg"
+        # Cover manual dibaca dari RESOURCE_DIR (read-only) — lihat AUDIT.md G4.
+        thumb_img_input_path = RESOURCE_DIR / "input_thumbnail.jpg"
         if not thumb_img_input_path.exists():
-            thumb_img_input_path = BASE_DIR / "input_thumbnail.png"
+            thumb_img_input_path = RESOURCE_DIR / "input_thumbnail.png"
 
         if not thumb_img_input_path.exists():
             update_status("Auto-Cover...")
@@ -1332,7 +1416,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             inputs += ["-i", str(vh_path)]
             hook_idx = 2
             filter_parts.append(f"[{hook_idx}:a]volume=1.5[hook_adj]")
-            filter_parts.append(f"[orig_adj][hook_adj]amix=inputs=2:duration=first[a_voice]")
+            filter_parts.append("[orig_adj][hook_adj]amix=inputs=2:duration=first[a_voice]")
             audio_map = "[a_voice]"
 
         if use_bgm:
@@ -1360,9 +1444,14 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
 
         vf_final = f"scale={target_w}:{target_h},eq=saturation=1.05:contrast=1.02,fade=t=out:st={dur+cover_duration-0.5}:d=0.5"
 
+        # AUDIT.md G8: dua perintah render pakai literal "ffmpeg", bukan
+        # get_ffmpeg_path(). Dengan bin/ffmpeg.exe tidak ada di repo, build EXE
+        # tidak punya ffmpeg dan bagian ini gagal dengan pesan yang menyesatkan.
+        ffmpeg_exe = get_ffmpeg_path()
+
         if use_hook or use_bgm:
             fc = ";".join(filter_parts)
-            ffmpeg_cmd_list = ["ffmpeg", "-y"] + inputs + [
+            ffmpeg_cmd_list = [ffmpeg_exe, "-y"] + inputs + [
                 "-filter_complex", fc,
                 "-map", "0:v:0", "-map", audio_map,
                 "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", rpreset["preset"], "-crf", str(rpreset["crf"]),
@@ -1370,7 +1459,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 "-vf", vf_final, "-bsf:v", "h264_metadata=video_full_range_flag=1", str(final_out)
             ]
         else:
-            ffmpeg_cmd_list = ["ffmpeg", "-y"] + inputs + [
+            ffmpeg_cmd_list = [ffmpeg_exe, "-y"] + inputs + [
                 "-map", "0:v:0", "-map", "1:a:0",
                 "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", rpreset["preset"], "-crf", str(rpreset["crf"]),
                 "-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", "-shortest",
@@ -1378,11 +1467,19 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
                 "-bsf:v", "h264_metadata=video_full_range_flag=1", str(final_out)
             ]
 
+        # Metadata bersih: judul dari AI tidak pernah masuk ke argv atau filtergraph
+        # tanpa disaring (quote_for_filtergraph).
+        if title:
+            ffmpeg_cmd_list[-1:-1] = [
+                "-metadata", f"title={quote_for_filtergraph(title)[:180]}",
+                "-metadata", f"comment={APP_NAME} {APP_VERSION}",
+            ]
+
         try:
-            ffmpeg_proc = subprocess.Popen(ffmpeg_cmd_list, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        except (OSError, ValueError) as e:
-            logger.error("ffmpeg Popen failed, aborting: %s", e)
-            raise Exception(f"❌ FFmpeg gagal dijalankan: {e}") from e
+            ffmpeg_proc = run_streaming(ffmpeg_cmd_list)
+        except CommandError as e:
+            logger.error("ffmpeg start failed: %s", e)
+            return False, str(e)
 
         import queue as qmod
         ff_err_q = qmod.Queue()
@@ -1416,7 +1513,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             keywords = extract_keywords_from_transcript(all_words, opts.get("config"), log_func)
             for ts, kw in keywords:
                 log_func(f"   > Keyword: {kw}")
-                img_path = fetch_pexels_broll(kw, pk, TEMP_DIR)
+                img_path = fetch_pexels_broll(kw, pk, temp_dir())
                 if img_path:
                     try:
                         ov_h = int(target_h * 0.55)
@@ -1849,7 +1946,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
             df.write(f"{'='*50}\n")
             df.write(f"📌 JUDUL: {title.upper()}\n")
             if title_alt:
-                df.write(f"📋 ALTERNATIF:\n")
+                df.write("📋 ALTERNATIF:\n")
                 for i, t in enumerate(title_alt, 1):
                     df.write(f"  {i}. {t}\n")
             if viral_score:

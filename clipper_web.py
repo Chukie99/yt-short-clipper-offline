@@ -19,8 +19,9 @@ if "google.colab" in sys.modules:
         config_file=str(_drive_config),
     )
 
+from clipper_paths import temp_dir
 from clipper_core import (
-    BASE_DIR, TEMP_DIR, OUTPUT_DIR, CONFIG_FILE,
+    RESOURCE_DIR, TEMP_DIR, OUTPUT_DIR,
     TEMPLATES, RENDER_PRESETS, DEFAULT_CONFIG, GEMINI_PROMPT, UA,
     load_config, save_config, check_dependencies, list_available_fonts,
     get_safe_id, safe_generate_content, process_single_video,
@@ -83,6 +84,8 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
 
     try:
         collector.log("[#] Fetching metadata...")
+        tmp = temp_dir()
+        tmp.mkdir(parents=True, exist_ok=True)
         vid_id = get_safe_id(link)
         sid = vid_id
 
@@ -90,15 +93,20 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
         from clipper_core import get_ytdlp_path
         y_p = get_ytdlp_path()
 
-        cookies_opts = ""
+        cookies = []
         if cookies_file:
-            cookies_opts = f'--cookies "{cookies_file}"'
+            cookies = ["--cookies", str(cookies_file)]
 
-        cmd_info = f'{y_p} {cookies_opts} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,web_creator,mediaconnect" --skip-download --write-info-json -o "{TEMP_DIR}/{sid}_full" "{link}"'
+        # List-args (shell=False) — shell=True + f-string berisi link dari user
+        # adalah command injection (AUDIT.md B1).
+        base = [y_p] + cookies + ["--user-agent", UA, "--extractor-args",
+                "youtube:player_client=tv,web_creator,mediaconnect",
+                "--skip-download", "--write-info-json",
+                "-o", f"{tmp}/{sid}_full", link]
         import subprocess
-        subprocess.run(cmd_info, shell=True, capture_output=True, timeout=30)
+        subprocess.run(base, capture_output=True, timeout=30, shell=False)
 
-        info_f = TEMP_DIR / f"{sid}_full.info.json"
+        info_f = tmp / f"{sid}_full.info.json"
         title, desc = sid, ""
         if info_f.exists():
             with open(info_f, "r", encoding="utf-8") as f:
@@ -108,14 +116,17 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
         collector.log(f"[#] Video: {title}")
 
         # Try subtitles
-        cmd_subs = f'{y_p} {cookies_opts} --user-agent "{UA}" --extractor-args "youtube:player_client=tv,web_creator,mediaconnect" --skip-download --write-auto-subs --sub-langs "id,en" --convert-subs srt -o "{TEMP_DIR}/{sid}_full" "{link}"'
+        base_subs = [y_p] + cookies + ["--user-agent", UA, "--extractor-args",
+                      "youtube:player_client=tv,web_creator,mediaconnect",
+                      "--skip-download", "--write-auto-subs", "--sub-langs", "id,en",
+                      "--convert-subs", "srt", "-o", f"{tmp}/{sid}_full", link]
         try:
-            subprocess.run(cmd_subs, shell=True, capture_output=True, timeout=60)
+            subprocess.run(base_subs, capture_output=True, timeout=60, shell=False)
         except Exception:
             collector.log("[!] Subtitle tidak tersedia, lanjut tanpa transkrip.")
 
         # Check if full video exists, download if not
-        orig = TEMP_DIR / f"{sid}_full.mp4"
+        orig = tmp / f"{sid}_full.mp4"
         if not orig.exists():
             collector.log("[#] Downloading video untuk transkrip...")
             from clipper_core import download_youtube
@@ -126,7 +137,7 @@ def run_analysis(link, ai_provider, gemini_key, groq_key, openrouter_key,
                 collector.log("[#] Mencoba analisis tanpa transkrip lengkap...")
 
         # Parse subtitle
-        srt = list(TEMP_DIR.glob(f"{sid}_full.*.srt"))
+        srt = list(tmp.glob(f"{sid}_full.*.srt"))
         txt = ""
         if srt:
             collector.log("[#] Parsing subtitle...")
@@ -269,7 +280,7 @@ def process_segments(selected_indices, link,
 
         # Find output files
         today_folder = time.strftime("%d-%m-%Y")
-        today_dir = OUTPUT_DIR / today_folder
+        today_dir = temp_dir() / today_folder
         output_files = []
         if today_dir.exists():
             for f in sorted(today_dir.glob("*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True):
