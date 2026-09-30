@@ -58,6 +58,29 @@ yt-dlp sudah terlalu lama.
 
 ---
 
+## Rilis
+
+| Versi | Tanggal | Status | Ada di branch |
+|---|---|---|---|
+| 1.2.0 | 2026-09 | Stable | `main` |
+| 2.0.0 | 2026-09-30 | Beta | `refactor/pro` |
+
+**2.0.0 masih beta, bukan versi jual.** Yang belum beres dan belum pernah
+diuji di PC kosong:
+- EXE hasil build belum pernah dijalankan sungguhan (frozen mode differ dari dev mode)
+- Installer hanya di-parse-check, belum pernah diuji di PC kosong
+- BGM `backsound/` provenance belum jelas, belum diganti musik berlisensi
+- Belum ada kode aktivasi
+
+Kalau mau versi beta, ambil branch `refactor/pro`:
+```bash
+git clone -b refactor/pro https://github.com/Chukie99/yt-short-clipper-offline.git
+cd yt-short-clipper-offline
+pip install -r requirements.txt
+```
+
+---
+
 ## Pakai
 
 ```bash
