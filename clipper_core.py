@@ -14,6 +14,7 @@ from clipper_paths import (
     RESOURCE_DIR, temp_dir, log_dir, bgm_dir, config_file,
     queue_state_file,
     ensure_dirs, prepend_bin_to_path, default_output_dir, output_dir_from_config,
+    temp_dir as temp_dir_path, config_file as config_file_path,
     migrate_legacy_config, adopt_legacy_output_dir, copy_legacy_queue_state,
 )
 from clipper_run import (
@@ -123,20 +124,17 @@ from mediapipe.tasks.python import core
 IS_COLAB = "google.colab" in sys.modules
 
 # ---------- Konfigurasi Global ----------
-if getattr(sys, 'frozen', False):
-    BASE_DIR = Path(sys._MEIPASS)
-else:
-    BASE_DIR = Path(__file__).parent.absolute()
-
-bundled_bin = BASE_DIR / "bin"
-if bundled_bin.exists() and str(bundled_bin) not in os.environ.get("PATH", ""):
-    os.environ["PATH"] = str(bundled_bin) + os.pathsep + os.environ.get("PATH", "")
-
-TEMP_DIR = BASE_DIR / "temp"
-OUTPUT_DIR = BASE_DIR / "output"
-CONFIG_FILE = BASE_DIR / "config.json"
-TEMP_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+# CATATAN FASE 5: blok lama di sini menimpa BASE_DIR/TEMP_DIR/OUTPUT_DIR/CONFIG_FILE
+# dengan BASE_DIR/"temp", BASE_DIR/"output", dan BASE_DIR/"config.json" — persis
+# bug yang clipper_paths.py dibangun untuk menutup. Akibatnya `import clipper_core`
+# membuat folder temp/ dan output/ DI DALAM FOLDER APLIKASI, dan saat frozen
+# semuanya jatuh ke sys._MEIPASS yang dihapus saat app ditutup.
+#
+# Semua penulisan sekarang memakai accessor call-time (temp_dir(), config_file(),
+# default_output_dir()). Alias module-level di baris ~58 sudah cukup untuk call
+# site lama; blok ini tidak melakukan apa pun selain unanimously membatalkan
+# Phase 1. Dihapus, bukan "dipakai lagi" — dipakai lagi berarti menulis ke folder
+# aplikasi, yang persis yang tidak boleh terjadi.
 
 # ---------- Platform-Aware Binary Paths ----------
 def get_ffmpeg_path():
@@ -175,29 +173,41 @@ def _resolve_output_dir(config=None):
     return d
 
 def setup_directories(base_dir=None, temp_dir=None, output_dir=None, config_file=None):
-    """Override default directories (e.g. for Google Drive on Colab).
+    """Override lokasi folder untuk Colab/web.
 
-    Hanya dipakai di Colab/web — di desktop path diambil dari clipper_paths.
+    Desktop TIDAK memakai ini — di desktop semua path datang dari clipper_paths.
+
+    Catatan fase 5: versi lama fungsi ini jatuh ke `BASE_DIR / "temp"` saat
+    argumen tidak diberikan, dan BASE_DIR adalah read-only resource dir. Itu
+    berarti fallback-nya menulis ke folder aplikasi — bug yang sama dengan blok
+    yang dihapus di atas, hanya tersembunyi di balik parameter opsional. Sekarang
+    kalau argumen tidak diberikan, fallthrough-nya ke accessor yang sama dengan
+    jalur desktop, jadi tidak ada lagi cabang yang menulis ke resource dir.
+
+    Argumen `temp_dir` bertabrakan dengan fungsi `temp_dir` milik clipper_paths
+    di namespace modul, makanya di sini dipakai nama depan (`_t`) supaya tidak
+    bayangan.
     """
     global BASE_DIR, TEMP_DIR, OUTPUT_DIR, CONFIG_FILE
+
     if base_dir:
         BASE_DIR = Path(base_dir)
-    if temp_dir:
-        TEMP_DIR = Path(temp_dir)
-        TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    else:
         TEMP_DIR = BASE_DIR / "temp"
-        TEMP_DIR.mkdir(exist_ok=True)
-    if output_dir:
-        OUTPUT_DIR = Path(output_dir)
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    else:
         OUTPUT_DIR = BASE_DIR / "output"
-        OUTPUT_DIR.mkdir(exist_ok=True)
-    if config_file:
-        CONFIG_FILE = Path(config_file)
-    else:
         CONFIG_FILE = BASE_DIR / "config.json"
+
+    # Fallthrough ke accessor — BUKAN BASE_DIR/"temp".
+    _t = Path(temp_dir) if temp_dir else temp_dir_path()
+    _o = Path(output_dir) if output_dir else default_output_dir()
+    _c = Path(config_file) if config_file else config_file_path()
+
+    _t.mkdir(parents=True, exist_ok=True)
+    _o.mkdir(parents=True, exist_ok=True)
+    _c.parent.mkdir(parents=True, exist_ok=True)
+
+    TEMP_DIR = _t
+    OUTPUT_DIR = _o
+    CONFIG_FILE = _c
 
 GENAI_AVAILABLE = False
 try:
