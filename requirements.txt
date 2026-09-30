@@ -1,14 +1,49 @@
-yt-dlp[default]>=2026.3.17
-opencv-python>=4.8.0
-numpy>=1.24.0
-faster-whisper>=1.0.0
-customtkinter>=5.2.0
-Pillow>=10.0.0
-ffmpeg-python>=0.2.0
-google-genai>=0.3.0
-requests>=2.31.0
-mediapipe>=0.10.0
-python-dotenv>=1.0.0
-gradio>=4.0.0
-streamlit>=1.30.0
-pyngrok>=7.0.0
+# Dependensi runtime — YT Short Clipper Pro
+#
+# Versi di-pin ke LOWER BOUND + UPPER BOUND, bukan `==` persis.
+#
+# Alasan bukan `==` persis: patch release aman (2.31.2 -> 2.31.3) biasanya cuma
+# memperbaiki bug, dan pin persis akan membuat setiap update keamanan butuh
+# commit baru. Upper bound ada supaya breaking change dari major berikutnya tidak
+# masuk diam-diam ke build rilis.
+#
+# Lower bound = versi paling tua yang benar-benar dipakai dan sudah diuji.
+#
+# CATATAN INSTALLER: ffmpeg TIDAK ada di requirements.txt (program eksternal).
+# - ffmpeg: program eksternal, dipasang terpisah (winget install Gyan.FFmpeg).
+#   Tidak bisa di-pin lewat pip.
+# - yt-dlp: ADA di requirements (pip) di bawah, tapi HARUS sering di-update
+#   karena YouTube rutin memutus extractor lama. Lihat THIRD_PARTY_NOTICES.md.
+
+# --- Inti ---
+yt-dlp[default]>=2026.3.17,<2027.0.0
+requests>=2.31.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+
+# --- Video / gambar ---
+opencv-python>=4.8.0,<5.0.0
+numpy>=1.24.0,<3.0.0
+Pillow>=10.0.0,<12.0.0
+
+# --- Transkripsi ---
+# ctranslate2 wajib ikut: faster-whisper memakainya untuk inferensi, dan
+# clipper_core menanyakan ctranslate2 (bukan torch) untuk deteksi GPU —
+# lihat AUDIT.md G10.
+faster-whisper>=1.0.0,<2.0.0
+ctranslate2>=4.0.0,<5.0.0
+
+# --- Face tracking ---
+mediapipe>=0.10.0,<0.11.0
+
+# --- AI ---
+google-genai>=0.3.0,<2.0.0
+
+# --- UI desktop ---
+customtkinter>=5.2.0,<6.0.0
+
+# --- Web UI (opsional; Colab) ---
+# Tidak dipakai di installer desktop, tapi app.py / clipper_web.py masih ada di
+# repo. COMMENTED-Section ini tidak di-install untuk rilis desktop.
+# gradio>=4.0.0,<7.0.0
+# streamlit>=1.30.0,<2.0.0
+# pyngrok>=7.0.0,<8.0.0

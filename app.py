@@ -23,6 +23,7 @@ REPO_DIR = Path(__file__).parent.absolute()
 if str(REPO_DIR) not in sys.path:
     sys.path.insert(0, str(REPO_DIR))
 
+from clipper_legal import SUBTITLE_FONT_DEFAULT
 from clipper_paths import DATA_DIR, temp_dir
 from clipper_core import (
     TEMPLATES, RENDER_PRESETS, GEMINI_PROMPT, UA,
@@ -371,7 +372,7 @@ def run_processing(link, segments, selected_indices, settings, collector):
         opts = {
             "watermark": cfg.get("watermark", ""),
             "status_func": lambda t: collector.log(f"[status] {t}"),
-            "selected_font": cfg.get("subtitle_font", "KOMIKAX_.ttf"),
+            "selected_font": cfg.get("subtitle_font", SUBTITLE_FONT_DEFAULT),
             "ai_desc": seg.get("description", ""),
             "split_screen": seg.get("split_screen", False),
             "mood": seg.get("mood", "santai"),

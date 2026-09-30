@@ -19,6 +19,7 @@ if "google.colab" in sys.modules:
         config_file=str(_drive_config),
     )
 
+from clipper_legal import SUBTITLE_FONT_DEFAULT
 from clipper_paths import temp_dir
 from clipper_core import (
     TEMPLATES, RENDER_PRESETS, GEMINI_PROMPT, UA,
@@ -238,7 +239,7 @@ def process_segments(selected_indices, link,
                 "cookies_path": cfg.get("cookies_path"),
                 "watermark": cfg.get("watermark"),
                 "status_func": lambda t: collector.log(f"[status] {t}"),
-                "selected_font": cfg.get("subtitle_font", "KOMIKAX_.ttf"),
+                "selected_font": cfg.get("subtitle_font", SUBTITLE_FONT_DEFAULT),
                 "logo_path": cfg.get("logo_path", ""),
                 "ai_desc": seg.get("description", ""),
                 "split_screen": seg.get("split_screen", False),
@@ -413,7 +414,7 @@ def build_ui():
                         )
                         font_name = gr.Dropdown(
                             list_available_fonts(),
-                            value=config.get("subtitle_font", "KOMIKAX_.ttf"),
+                            value=config.get("subtitle_font", SUBTITLE_FONT_DEFAULT),
                             label="Font"
                         )
                     with gr.Column():

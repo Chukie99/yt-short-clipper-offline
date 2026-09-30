@@ -12,6 +12,7 @@ from clipper_core import (
     safe_generate_content, download_youtube, process_single_video,
     tts_generate_hook, time_str_to_seconds, get_ytdlp_path,
 )
+from clipper_legal import SUBTITLE_FONT_DEFAULT
 from clipper_paths import temp_dir
 from clipper_ai import build_prompt
 
@@ -66,7 +67,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.steps_var = ctk.StringVar(value=str(config.get("opticlone_steps", 4)))
         self.speed_var = ctk.StringVar(value=str(config.get("opticlone_speed", 1.0)))
         ctk.CTkLabel(self, text="Logo:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.l_var = ctk.StringVar(value=config.get("logo_path", "")); f_l = ctk.CTkFrame(self, fg_color="transparent"); f_l.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_l.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_l, textvariable=self.l_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_l, text="🖼️", width=50, command=self.browse_logo, fg_color="#F0DDD2", corner_radius=8).grid(row=0, column=1); r += 1
-        ctk.CTkLabel(self, text="Font:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w");         self.f_opts = list_available_fonts(); self.f_var = ctk.StringVar(value=config.get("subtitle_font", "KOMIKAX_.ttf")); ctk.CTkComboBox(self, values=self.f_opts, variable=self.f_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
+        ctk.CTkLabel(self, text="Font:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w");         self.f_opts = list_available_fonts(); self.f_var = ctk.StringVar(value=config.get("subtitle_font", SUBTITLE_FONT_DEFAULT)); ctk.CTkComboBox(self, values=self.f_opts, variable=self.f_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Render Quality:", font=("Arial", 14, "bold"), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w")
         self.rq_var = ctk.StringVar(value=config.get("render_quality", "normal"))
         ctk.CTkComboBox(self, values=["draft", "normal", "high"], variable=self.rq_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1

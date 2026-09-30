@@ -33,12 +33,15 @@ import shutil
 import sys
 from pathlib import Path
 
+from clipper_version import APP_VERSION
+
 # TODO(owner): nama produk ini belum diputuskan. Ganti di sini SEKALI — dipakai
 # untuk folder %APPDATA%, folder output default, judul window, dan nama registry
 # installer. Setelah diganti, cek juga docs/DECISIONS.md dan README.
+# Versi aplikasi TIDAK didefinisikan di sini. Satu sumber kebenaran ada di
+# clipper_version.py — dipakai juga oleh README, build_exe.py, dan setup_pc_baru.bat.
 APP_NAME = "YT Short Clipper Pro"
 APP_DIR_NAME = "YTShortClipperPro"
-APP_VERSION = "2.0.0"
 
 # Config versi 2 = sudah pakai pemisahan path. Bumped setiap kali ada field baru
 # yang butuh migrasi dari config lama.

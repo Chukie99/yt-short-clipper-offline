@@ -1,0 +1,106 @@
+fase-4: legal/licensing, font berlisensi, versi dependency, README jujur
+
+Menjadikan "boleh nggak aset ini ikut installer" punya jawaban otomatis, bukan
+jawaban dari ingatan penyusun installer.
+
+KOREKSI TEMUAN YANG SALAH
+
+Temuan C3 di brief ("ffmpeg.exe dan yt-dlp.exe ada di bin/, di-commit ke git,
+tanpa THIRD_PARTY_NOTICES — ffmpeg punya kewajiban LGPL/GPL") SALAH.
+`git ls-files bin/` hanya menghasilkan tiga file model MediaPipe:
+
+  bin/deploy.prototxt
+  bin/detector.tflite
+  bin/res10_300x300_ssd_iter_140000.caffemodel
+
+Tidak ada executable di sana. ffmpeg/ffprobe diambil dari PATH (WinGet) dan
+yt-dlp dari pip. Jadi kewajiban LGPL untuk mendistribusikan binari ffmpeg tidak
+muncul di repo ini sama sekali. Dicatat sebagai SALAH di AUDIT.md, dan ada test
+(TestNoBundledBinaries) yang menjaga supaya tidak berubah diam-diam.
+
+BLOKER YANG NYATA: KOMIKAX_.ttf
+
+Dibaca dengan fontTools: nameID 0 = "© 1999-2001, WolfBainX & Apostrophic Labs.
+All rights reserved", dan tidak ada nameID 14. Font komersial berbayar — dan itu
+default subtitle di 5 tempat.
+
+File DIHAPUS dari repo, default jadi Montserrat-Bold.ttf (SIL OFL, nameID 14 =
+openfontlicense.org, terverifikasi). User yang punya lisensi KOMIKAX masih bisa
+memilihnya lewat Settings; yang hilang cuma hak mendistribusikannya.
+
+Alasan menghapus, bukan cuma memperingatkan: repo ini sendiri adalah
+distribusi. Selalu ada kemungkinan build script menyalin seluruh fonts/.
+
+BGM DARI STOCK VIDEO PEXELS — DIHAPUS
+
+ensure_bgm() mencari video Pexels dengan query "{mood}+music" lalu mengambil
+audio track-nya. Pexels adalah library foto/video, bukan library musik, dan
+lisensinya tidak dirancang untuk keperluan musik. Sekarang BGM hanya dari file
+lokal di %LOCALAPPDATA%/YTShortClipperPro/bgm/.
+
+Perubahan perilaku yang disengaja dan ditulis di DECISIONS.md [D012]: mood tanpa
+file BGM dulu gagal diam-diam, sekarang render tanpa BGM dengan pesan di log.
+
+Pexels tetap dipakai untuk B-roll (foto/video) — itu penggunaan yang sah.
+
+MINIMUM PYTHON: 3.10, BUKAN 3.9
+
+Brief menyebut google-genai butuh >=3.9. Itu bukan pembatas kita. Setelah
+diverifikasi: mediapipe 0.10.x juga mengizinkan 3.9 (wheel py3 tersedia untuk
+3.9). Pembatas sebenarnya adalah kode kita sendiri — clipper_core.py memakai
+PEP 604 (`dict | None`) tanpa `from __future__ import annotations`, dan itu butuh
+3.10.
+
+Semua angka versi sekarang hanya hidup di clipper_version.py; clipper_paths
+meng-import dari sana (sebelumnya APP_VERSION didefinisikan dua kali — persis
+masalah yang modul itu buat). README dan check_dependencies() membacanya dari sana.
+
+test_code_syntax_requires_min_python gagal kalau ada yang menurunkan angka ini
+ke 3.9 tanpa addressing PEP 604 — jadi perubahan tidak lolos diam-diam.
+
+DEPENDENCY DI-PIN
+
+requirements.txt sekarang pakai lower + upper bound, bukan `>=` telanjang dan
+bukan `==` persis. Alasannya ditulis di file itu. ctranslate2 ditambah
+eksplisit karena clipper_core menanyakannya untuk deteksi GPU (fase 3).
+
+LICENSE & THIRD-PARTY NOTICES
+
+- LICENSE (MIT) — sekarang benar-benar ada; README sudah mengklaimnya sejak dulu
+- THIRD_PARTY_NOTICES.md — Montserrat (OFL), model MediaPipe (Apache 2.0),
+  ffmpeg + yt-dlp (tidak dikemas, kewajiban dijelaskan), KOMIKAX (dihapus),
+  dan dua file BGM yang MASIH jadi syarat rilis
+- licenses/OFL.txt dan licenses/Apache-2.0.txt — teks asli, diunduh dari
+  sumber resmi, bukan ditulis ulang dari ingatan
+
+BARU: clipper_legal.py
+
+Satu sumber kebenaran untuk status lisensi tiap aset, dipakai test sebagai gerbang
+rilis dan akan dipakai dialog About + first-run wizard. audit_installed_fonts()
+MELAPORKAN font terlarang yang ditemukan, tidak menghapus file user sendiri.
+
+check_dependencies() sekarang juga mengecek versi Python, keberadaan font default,
+dan font berlisensi komersial yang nyasar.
+
+README DITULIS ULANG
+
+Klaim "download video tanpa watermark" dihapus — YouTube tidak punya watermark,
+jadi klaim itu tidak ada artinya. Ditambah bagian jujur: analisis AI itu cloud
+(bukan offline, meski repo dulu bernama "offline"), ToS YouTube, dan status BGM.
+
+Test: tests/test_legal.py baru, 35 test. Yang paling penting: setiap font di
+repo harus punya lisensi redistribusi yang terbukti, dan test yang memindai
+SEMUA font untuk "All rights reserved" tanpa nameID 14.
+
+Verified: 229 test hijau, ruff F/E9 bersih, semua modul import, font default
+benar-benar ada, LICENSE + license texts ada.
+
+BELUM SELESAI — SYARAT RILIS (perlu keputusan kamu):
+
+1. backsound/kocak.mp3 dan sedih.mp3 provenance tidak jelas. Ganti dengan musik
+   berlisensi (YouTube Audio Library / CC0 / Artlist) sebelum jual.
+2. Nama produk masih TODO(owner) di clipper_paths.APP_NAME.
+3. yt-dlp perlu dipaketkan/di-update installer (YouTube rutin mematahkan).
+4. Build EXE belum diuji sama sekali di fase ini.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

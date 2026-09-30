@@ -27,6 +27,10 @@ from clipper_secrets import (
 from clipper_retry import (
     AIError, call_with_retry, ai_required_fields_present,
 )
+from clipper_legal import (
+    SUBTITLE_FONT_DEFAULT, FALLBACK_FONTS, audit_installed_fonts,
+)
+from clipper_version import check_python
 
 # Jumlah percobaan AI. 3 = percobaan pertama + 2 retry; dengan backoff eksponensial
 # itu total menunggu paling lama ~6 detik sebelum menyerah.
@@ -213,7 +217,7 @@ DEFAULT_CONFIG = {
     "pexels_api_key": "",
     "cookies_path": "",
     "watermark": "",
-    "subtitle_font": "KOMIKAX_.ttf",
+    "subtitle_font": SUBTITLE_FONT_DEFAULT,
     "logo_path": "",
     "bgm_volume": 0.15,
     "render_quality": "normal",
@@ -484,9 +488,16 @@ def save_config(config):
 def check_dependencies():
     """Cek tool eksternal + library wajib. Kembalikan list pesan siap tampil.
 
-    dipakai juga untuk first-run wizard (Fase 5).
+    Dipakai juga untuk first-run wizard (fase 5).
     """
     errors = []
+
+    # Versi Python dicek lebih dulu: kalau terlalu lama, semua error lain
+    # cuma gejala — memperbaiki dependensi tidak akan menolong.
+    python_error = check_python()
+    if python_error:
+        errors.append(python_error)
+
     prepend_bin_to_path()
     for label, exe in [("ffmpeg", get_ffmpeg_path()), ("yt-dlp", get_ytdlp_path())]:
         try:
@@ -505,6 +516,23 @@ def check_dependencies():
     detector = RESOURCE_DIR / "bin" / "detector.tflite"
     if not detector.exists():
         errors.append("bin/detector.tflite hilang — face tracking tidak akan jalan. Install ulang aplikasi.")
+
+    # Font default harus ada, kalau tidak subtitle akan jatuh ke font sistem.
+    default_font = RESOURCE_DIR / "fonts" / SUBTITLE_FONT_DEFAULT
+    if not default_font.exists():
+        errors.append(
+            f"Font subtitle bawaan '{SUBTITLE_FONT_DEFAULT}' hilang — "
+            "subtitle akan pakai font sistem. Install ulang aplikasi."
+        )
+
+    blocked = audit_installed_fonts()
+    if blocked:
+        errors.append(
+            "Ada font berlisensi komersial di folder fonts/: "
+            + ", ".join(blocked)
+            + ". Font ini tidak boleh didistribusikan — hapus atau pilih font lain."
+        )
+
     return errors
 
 def list_available_fonts():
@@ -515,7 +543,7 @@ def list_available_fonts():
         for pattern in ("*.ttf", "*.otf"):
             for f in local_fonts.glob(pattern):
                 fonts.append(f.name)
-    for f in ["Montserrat-Bold.ttf", "arialbd.ttf", "Impact.ttf"]:
+    for f in FALLBACK_FONTS:
         if f not in fonts:
             fonts.append(f)
     return sorted(set(fonts))
@@ -709,58 +737,31 @@ def safe_generate_content(config, contents, log_func=None):
     )
 
 def ensure_bgm(mood, log_func, config=None):
-    """Cari file BGM untuk mood. Hanya menulis ke DATA_DIR (bukan folder aplikasi).
+    """Ambil file BGM untuk mood dari folder BGM milik user.
 
-    Cache sekali pakai: setelah `bgm/<mood>.mp3` ada, tidak ada request lagi.
+    Hanya dari file lokal — tidak ada lagi pengambilan audio dari stock video.
+
+    Kenapa dihapus: Pexels adalah library foto dan video, bukan library musik.
+    Audio dari stock video bukan musik, dan lisensinya tidak jelas untuk
+    keperluan musik. Untuk produk yang dijual, ini risiko yang tidak perlu
+    diambil. Lihat THIRD_PARTY_NOTICES.md bagian 4 dan DECISIONS.md [D012].
+
+    Mood yang tidak punya file BGM menghasilkan render tanpa BGM — bukan error.
+    BGM adalah enhancement, bukan bagian dari fungsi inti.
     """
     bdir = bgm_dir()
     bdir.mkdir(parents=True, exist_ok=True)
-    bgm_path = bdir / f"{mood.lower()}.mp3"
+    key = (mood or "santai").strip().lower()
+    bgm_path = bdir / f"{key}.mp3"
     if bgm_path.exists():
         return bgm_path
 
-    # Try Pexels API first if key exists
-    pexels_key = config.get("pexels_api_key") if config else None
-    if pexels_key:
-        try:
-            log_func(f"[🎵] Mencari backsound di Pexels (Mood: {mood})...")
-            url = f"https://api.pexels.com/videos/search?query={mood}+music&per_page=5"
-            headers = {"Authorization": pexels_key}
-            resp = requests.get(url, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                vids = resp.json().get("videos", [])
-                if vids:
-                    vids.sort(key=lambda x: x.get("duration", 999))
-                    v_url = vids[0]["video_files"][0]["link"]
-                    # AUDIT.md: request ini tidak punya timeout → bisa menggantung
-                    # selamanya dan menahan batch. Timeout 60s cukup untuk file video.
-                    r_v = requests.get(v_url, stream=True, timeout=60)
-                    r_v.raise_for_status()
-                    temp_vid = bdir / f"temp_{mood}.mp4"
-                    with open(temp_vid, "wb") as f:
-                        for chunk in r_v.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    ffmpeg_cmd = get_ffmpeg_path()
-                    # List-args, bukan f-string: temp_vid berisi nama mood yang
-                    # berasal dari AI/user (AUDIT.md B1).
-                    run_command(
-                        [ffmpeg_cmd, "-y", "-i", str(temp_vid), "-vn",
-                         "-acodec", "mp3", str(bgm_path)],
-                        timeout=120,
-                    )
-                    temp_vid.unlink(missing_ok=True)
-                    if bgm_path.exists():
-                        log_func(f"[✅] Backsound {mood} dari Pexels berhasil.")
-                        return bgm_path
-        except Exception as e:
-            log_func(f"[⚠️] Pexels error: {e}")
-            logger.debug("pexels bgm fail: %s", e, exc_info=True)
-
     log_func(
-        "[⚠️] BGM tidak ditemukan untuk mood ini. Pakai file lokal: "
-        f"taruh {mood.lower()}.mp3 di {bgm_dir()}, atau isi Pexels API key di Settings."
+        f"[i] Tidak ada BGM untuk mood '{key}'. Pakai file lokal: taruh "
+        f"{key}.mp3 di {bdir}. Video tetap dirender tanpa BGM."
     )
     return None
+
 
 def fetch_pexels_broll(keyword, pexels_api_key, output_dir):
     if not pexels_api_key:
@@ -1411,7 +1412,7 @@ def process_single_video(link, start_sec, end_sec, title, lang, model_size, log_
     cookies_path = opts.get("cookies_path")
     watermark = opts.get("watermark", "")
     status_func = opts.get("status_func")
-    selected_font = opts.get("selected_font", "KOMIKAX_.ttf")
+    selected_font = opts.get("selected_font") or SUBTITLE_FONT_DEFAULT
     logo_path = opts.get("logo_path", "")
     ai_desc = opts.get("ai_desc", "")
     split_screen = opts.get("split_screen", False)

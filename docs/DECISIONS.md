@@ -266,3 +266,98 @@ rate limit.
 sudah mengisinya dari secret store (fase 2), jadi kode ini membaca dari `config`
 seperti biasa. Tidak ada jalur baca key dari environment di sini — kalau ada, itu
 membuat perilaku berbeda antara dev dan rilis.
+
+---
+
+## [D011] Font berlisensi komersial dihapus, bukan cuma "dilarang pakai"
+
+**Konteks.** `fonts/KOMIKAX_.ttf` adalah default subtitle. Dibaca dengan
+fontTools: `nameID 0` = "© 1999-2001, WolfBainX & Apostrophic Labs. All rights
+reserved", dan **tidak ada `nameID 14`** (tanda tidak ada URL lisensi). Font ini
+dijual komersial oleh pembuatnya.
+
+**Keputusan.** File dihapus dari repo. Default subtitle jadi `Montserrat-Bold.ttf`
+(SIL OFL, terverifikasi `nameID 14` = openfontlicense.org). Pengguna yang punya
+lisensi KOMIKAX masih bisa memilihnya lewat Settings — yang hilang hanya
+hak untuk mendistribusikannya.
+
+**Alasan menghapus, bukan hanya memperingatkan.** Font yang tidak boleh
+didistribusikan tidak bisa "berdiam" di repo hanya karena aplikasi tidak
+memakainya secara default: repo ini sendiri adalah distribusi. Selalu ada
+kemungkinan build script menyalin seluruh folder `fonts/`. Menghapus satu file
+lebih murah dan lebih pasti daripada berharap tidak ada yang menyalin.
+
+**Kenapa Montserrat boleh.** SIL OFL 1.1 mengizinkan penggunaan komersial,
+termasuk menjual Font Software sebagai bagian dari aplikasi — yang dilarang
+adalah menjual font itu sendirian. Kewajibannya: sertakan teks lisensi
+(`licenses/OFL.txt`) dan jangan gunakan nama "Montserrat" untuk font turunan
+yang sudah dimodifikasi.
+
+---
+
+## [D012] BGM dari stock video Pexels dihapus
+
+**Konteks.** `ensure_bgm()` mencari video di Pexels dengan query
+`{mood}+music`, lalu mengambil audio track-nya pakai ffmpeg `-vn`.
+
+**Keputusan.** Fallback itu dihapus. BGM sekarang hanya dari file lokal milik
+user di `%LOCALAPPDATA%/YTShortClipperPro/bgm/`.
+
+**Alasan.** Pexels adalah library foto dan video, bukan library musik. Audio dari
+stock video bukan musik — hasilnya terdengar seperti cuplikan video, dan yang
+lebih penting lisensinya tidak dirancang untuk penggunaan musik. Untuk produk
+yang dijual, ini risiko yang tidak perlu diambil, terutama karena BGM adalah
+**enhancement**: tanpa BGM videonya tetap jalan.
+
+Perubahan perilaku yang disengaja: sebelumnya fallback yang gagal tidak terlihat,
+sekarang mood tanpa file BGM menghasilkan render tanpa BGM **dengan pesan di log**. Itu
+lebih jujur daripada diam-diam menghasilkan video dengan trek yang salah.
+
+---
+
+## [D013] Minimum Python 3.10, ditentukan kode kita sendiri
+
+**Konteks.** Brief menyebut `google-genai` butuh >= 3.9, jadi ada tekanan untuk
+mengganti 3.8 di README jadi 3.9.
+
+**Setelah diverifikasi, itu bukan jawabannya.** Dua fakta:
+
+1. `google-genai` memang `>=3.9`. Tapi Mediapipe 0.10.x juga mengizinkan 3.9
+   (sudah dicek: wheel `py3` tersedia untuk 3.9). Jadi Mediapipe bukan pembatas.
+2. Pembatas sebenarnya adalah kode kita: `clipper_core.py` memakai anotasi
+   PEP 604 (`dict | None`) **tanpa** `from __future__ import annotations`. PEP 604
+   butuh Python 3.10.
+
+**Keputusan.** Floor = **3.10**, diuji sampai 3.12, anjuran 3.12. Semua angka
+hidup di `clipper_version.py`; README, `build_exe.py`, dan `setup_pc_baru.bat`
+harus membacanya dari sana.
+
+**Kenapa tidak turunkan ke 3.9 dengan menambah future import.** Menambah
+`from __future__ import annotations` ke file 2000+ baris di tengah refactor
+berisiko mengubah perilaku hal lain, dan 3.9 sendiri sudah EOL (Oktober 2025) —
+produk berbayar tidak sebaiknya bergantung padanya. Ditandai `TODO(owner)` di
+`clipper_version.py` kalau dukungan 3.9 nanti benar-benar dibutuhkan.
+
+**Test yang menjaga alasannya.** `test_code_syntax_requires_min_python` gagal kalau
+siapa pun menurunkan angka ini ke 3.9 tanpa addressing PEP 604 — supaya
+perubahan tidak lolos diam-diam.
+
+---
+
+## [D014] Aset yang lisensinya tidak jelas tidak boleh dikemas
+
+**Konteks.** `backsound/kocak.mp3` dan `backsound/sedih.mp3` ada di repo tanpa
+LICENSE, tanpa sumber, tanpa metadata pencipta. `THIRD_PARTY_NOTICES.md`
+sekarang menandai keduanya sebagai **blokir rilis**, bukan sekadar catatan.
+
+**Prinsip.** Untuk aset yang lisensinya tidak jelas, ada dua pilihan: hapus, atau
+tandai eksplisit sebagai syarat rilis. Untuk dua file BGM ini, keduanya belum
+dikerjakan karena butuh keputusan produk — user mungkin punya lisensi, atau
+mungkin tidak tahu sama sekali.
+
+**Kenapa tidak diam-diam hapus sekarang.** Menghapus aset yang mungkin
+dibeli/dikumpulkan user adalah keputusan yang bukan hak kode untuk diambil
+sendiri. Yang bisa dan harus dilakukan kode sekarang adalah memastikan tidak ada
+**keraguan** yang tersembunyi: file ditandai di THIRD_PARTY_NOTICES.md sebagai
+"provenance tidak diketahui", dan test menjaga agar tidak ada aset terlarang yang
+ter-kemas diam-diam.
