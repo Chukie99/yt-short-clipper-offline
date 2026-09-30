@@ -13,6 +13,7 @@ from clipper_core import (
     tts_generate_hook, time_str_to_seconds, get_ytdlp_path,
 )
 from clipper_paths import temp_dir
+from clipper_ai import build_prompt
 
 import customtkinter as ctk
 # --- Pastel palette (v1.0.0 Easy Use) ---
@@ -277,7 +278,12 @@ class VideoItem(ctk.CTkFrame):
         if not lk: return
         self.log_func("[#] Analisis segmen...")
         try:
-            rt = safe_generate_content(self.config, f"{GEMINI_PROMPT}\nLink: {lk}", self.log_func)
+            # AUDIT.md G1: prompt punya placeholder {transcript}. Kalau dikirim
+            # apa adanya, model menerima string literal dan mengarang analisis dari
+            # nol — hasilnya terlihat meyakinkan tapi sama sekali tidak berdasarkan
+            # video user. build_prompt menolak placeholder yang tak terisi.
+            prompt = build_prompt(GEMINI_PROMPT, transcript="")
+            rt = safe_generate_content(self.config, f"{prompt}\nLink: {lk}", self.log_func)
             jm = re.search(r'(\[.*\]|\{.*\})', rt, re.DOTALL)
             if jm:
                 raw_json = re.sub(r'[\x00-\x1f]', '', jm.group(1))
@@ -436,7 +442,8 @@ class App(ctk.CTk):
                             txt += l.strip() + " "
             ctx = f"TITLE: {title}\nDESC: {desc}\nTRANSCRIPT: {txt[:20000]}"
             self.log("[#] Menganalisis dengan AI...")
-            rt = safe_generate_content(self.config, f"{GEMINI_PROMPT.format(transcript=ctx)}\nLink: {link}", self.log)
+            prompt = build_prompt(GEMINI_PROMPT, transcript=ctx)
+            rt = safe_generate_content(self.config, f"{prompt}\nLink: {link}", self.log)
             jm = re.search(r'(\[.*\]|\{.*\})', rt, re.DOTALL)
             if jm:
                 raw_json = re.sub(r'[\x00-\x1f]', '', jm.group(1))

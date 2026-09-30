@@ -195,3 +195,74 @@ Menyensor di level handler menutup semua jalur sekaligus. Pola regex menutup
 key dari env yang tidak pernah melewati `register_secret`. Nilai dengan panjang
 < 8 sengaja tidak didaftarkan: menyensor "a" membuat log tak terbaca tanpa
 menambah keamanan yang berarti.
+
+---
+
+## [D009] Output AI diperlakukan sebagai input yang tidak dipercaya
+
+**Konteks.** Output AI langsung berakhir jadi argumen ffmpeg, nama file, dan teks
+yang ditampilkan ke user. Jadi ia tidak lebih dipercaya daripada input user —
+bedanya hanya datang lewat jaringan, sehingga gagal lebih jarang terlihat.
+
+Tiga kelas masalah nyata:
+
+1. **JSON rusak.** Model sering membungkus JSON di ``` ``` ```, menambah
+   penjelasan di depan, atau menambah karakter kontrol. `json.loads` gagal dan
+   seluruh hasil analisis hilang.
+2. **JSON valid tapi salah bentuk.** `{"start": "abc"}` lolos parse lalu meledak
+   di `time_str_to_seconds` — jauh dari tempat masalahnya, dan setelah AI sudah
+   spends token.
+3. **Prompt dengan placeholder kosong.** `GEMINI_PROMPT` punya `{transcript}`,
+   dan tombol "Analisis" mengirim apa adanya, sehingga model menerima string
+   literal `{transcript}` lalu mengarang analisis dari nol (AUDIT.md G1).
+   Hasilnya terlihat meyakinkan dan sama sekali tidak berdasarkan video user.
+
+**Keputusan.** Modul baru `clipper_ai.py`.
+
+- `extract_json()` mencoba urutan dari ketat ke longgar: fence, karakter kontrol,
+  lalu potongan dengan kurung kurawal seimbang.
+- `segments_from_response()` mengembalikan objek `Segment` yang sudah
+  divalidasi, bukan `dict` mentah. Field hilang diisi default; timestamp rusak
+  jadi "tidak ada"; `end <= start` diperbaiki.
+- `build_prompt()` **menolak** placeholder yang tidak terisi dengan `ValueError`.
+
+**Alasan menolak, bukan mengirim string kosong.** Mengirim `transcript=""` ke AI
+tetap menghasilkan analisis yang terdengar masuk akal. Menolak membuat masalahnya
+terlihat di log, dan user bisa memperbaikinya. Untuk kasus "Analisis" yang memang
+sengaja tanpa transkrip, pemanggil mengirim nilai yang menjelaskan situasinya —
+bukan diam-diam mengarang.
+
+**Kenapa `end` dinaikkan, bukan ditukar.** `start=60, end=10` setelah ditukar
+menjadi `10..60`, yaitu segmen yang tidak ada di video. Menaikkan `end` memberi
+user sesuatu yang bisa dilihat dan diedit; menukar menghasilkan video yang salah
+diam-diam. Render menolak rentang terbalik di tempat lain juga (AUDIT.md G3), jadi
+ini lapisan kedua.
+
+---
+
+## [D010] Retry hanya untuk error yang mungkin membaik
+
+**Konteks.** Loop lama mencoba 3 kali, tapi `sleep()` hanya di 429 dan semua error
+lain langsung `raise` di percobaan pertama. Jadi timeout dan 502 tidak pernah
+dicoba ulang — loop itu hanya bekerja untuk rate limit, dan bahkan di sana
+`Retry-After` dari server diabaikan.
+
+**Keputusan.** Modul baru `clipper_retry.py`.
+
+- Klasifikasi error: `RETRYABLE_STATUS` (408/429/5xx) vs `FATAL_STATUS`
+  (401/403/404/422). Error tanpa status — timeout, connection reset — dianggap
+  retryable.
+- Backoff eksponensial + jitter, `Retry-After` diprioritaskan.
+- API key yang tidak ada dicek **sebelum** request, jadi user dapat pesan jelas
+  alih-alih HTTP 401 setelah menunggu.
+
+**Alasan.** 401 tidak akan membaik dengan mencoba lagi; mencoba hanya membuang
+kuota dan menipu user dengan spinner. Sebaliknya, 429/502 hampir selalu sementara.
+Jitter penting karena tanpa itu beberapa request yang gagal bersamaan akan
+menghantam server di detik yang sama — pola yang justru memperlambat pemulihan
+rate limit.
+
+**Alasan tidak menghapus API key dari `config` sebagai sumber.** `load_config`
+sudah mengisinya dari secret store (fase 2), jadi kode ini membaca dari `config`
+seperti biasa. Tidak ada jalur baca key dari environment di sini — kalau ada, itu
+membuat perilaku berbeda antara dev dan rilis.

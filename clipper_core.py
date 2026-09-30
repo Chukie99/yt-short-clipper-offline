@@ -24,6 +24,18 @@ from clipper_secrets import (
     SECRET_FIELDS, get_secret, save_secrets, load_secrets,
     register_secret, redact,
 )
+from clipper_retry import (
+    AIError, call_with_retry, ai_required_fields_present,
+)
+
+# Jumlah percobaan AI. 3 = percobaan pertama + 2 retry; dengan backoff eksponensial
+# itu total menunggu paling lama ~6 detik sebelum menyerah.
+AI_MAX_ATTEMPTS = 3
+
+# Berapa banyak karakter transkrip yang dikirim ke AI untuk ekstrak keyword B-roll.
+# Batas ini menjaga request tetap di bawah ukuran input model tanpa membuang
+# konteks — cuplikan diambil merata, bukan dari depan saja.
+KEYWORD_SAMPLE_CHARS = 4000
 
 # .env hanya dibaca di dev (repo). Saat frozen tidak ada .env — API key user
 # disimpan terenkripsi (DPAPI) di %LOCALAPPDATA%, bukan dari environment.
@@ -610,50 +622,91 @@ def _valid_youtube_url(url: str) -> bool:
         return False
     return True
 
+def _http_post_json(url, headers, payload, provider):
+    """POST JSON dan kembalikan teks. Error diberi status agar retry bisa mengklasifikasi."""
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    if resp.status_code == 429:
+        raise _HTTPError("429 RESOURCE_EXHAUSTED", status=429, response=resp)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        raise _HTTPError(str(e), status=resp.status_code, response=resp) from e
+    try:
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise _HTTPError(f"Balasan {provider} tidak berbentuk JSON chat: {e}", status=502) from e
+
+
+class _HTTPError(Exception):
+    """Exception yang membawa status HTTP, dipakai clipper_retry."""
+
+    def __init__(self, message, status=None, response=None):
+        super().__init__(message)
+        self.status = status
+        self.response = response
+
+
+def _generate_once(config, contents, provider):
+    """Satu percobaan ke provider yang dipilih. Error dilempar apa adanya."""
+    if provider == "Gemini (Native)":
+        if not GENAI_AVAILABLE:
+            raise ImportError("Library Google GenAI tidak tersedia.")
+        api_key = config.get("gemini_api_key", "")
+        if not api_key:
+            raise _HTTPError("Gemini API key belum diisi", status=401)
+        client = genai.Client(api_key=api_key)
+        model = config.get("gemini_model", "gemini-2.0-flash")
+        response = client.models.generate_content(model=model, contents=contents)
+        text = (response.text or "").strip()
+        if not text:
+            raise _HTTPError("Gemini mengembalikan balasan kosong", status=502)
+        return text
+
+    if provider == "Groq":
+        api_key = config.get("groq_api_key", "")
+        if not api_key:
+            raise _HTTPError("Groq API key belum diisi", status=401)
+        return _http_post_json(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            {"model": config.get("groq_model", "llama-3.3-70b-versatile"),
+             "messages": [{"role": "user", "content": contents}]},
+            "Groq",
+        )
+
+    api_key = config.get("openrouter_api_key", "")
+    if not api_key:
+        raise _HTTPError("OpenRouter API key belum diisi", status=401)
+    return _http_post_json(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        {"model": config.get("openrouter_model", "nvidia/nemotron-3-super-120b-a12b:free"),
+         "messages": [{"role": "user", "content": contents}]},
+        "OpenRouter",
+    )
+
+
 def safe_generate_content(config, contents, log_func=None):
+    """Panggil provider AI yang dipilih, dengan retry yang benar.
+
+    Versi lama hanya menunggu pada error 429 dan langsung `raise` untuk semua
+    error lain — jadi timeout atau 502 tidak pernah dicoba lagi, dan `Retry-After`
+    dari server diabaikan. Sekarang klasifikasi error menentukan apakah layak
+    dicoba lagi, dan API key yang salah langsung ditolak tanpa menunggu.
+
+    API key dibaca dari config (sudah diteruskan clipper_secrets oleh
+    load_config), bukan lagi dari environment di sini.
+    """
     provider = config.get("ai_provider", "Gemini (Native)")
-    max_retries = 3; retry_delay = 20
-    for i in range(max_retries):
-        try:
-            if provider == "Gemini (Native)":
-                if not GENAI_AVAILABLE:
-                    raise ImportError("Library Google GenAI tidak tersedia.")
-                api_key = config.get("gemini_api_key", "") or os.environ.get("GEMINI_API_KEY", "")
-                client = genai.Client(api_key=api_key)
-                model = config.get("gemini_model", "gemini-2.0-flash")
-                response = client.models.generate_content(model=model, contents=contents)
-                return response.text.strip()
-            elif provider == "Groq":
-                api_key = config.get("groq_api_key", "") or os.environ.get("GROQ_API_KEY", "")
-                model = config.get("groq_model", "llama-3.3-70b-versatile")
-                url = "https://api.groq.com/openai/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-                payload = {"model": model, "messages": [{"role": "user", "content": contents}]}
-                resp = requests.post(url, headers=headers, json=payload, timeout=60)
-                if resp.status_code == 429:
-                    raise Exception("429 RESOURCE_EXHAUSTED")
-                resp.raise_for_status()
-                return resp.json()['choices'][0]['message']['content'].strip()
-            else:
-                api_key = config.get("openrouter_api_key", "") or os.environ.get("OPENROUTER_API_KEY", "")
-                model = config.get("openrouter_model", "nvidia/nemotron-3-super-120b-a12b:free")
-                url = "https://openrouter.ai/api/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-                payload = {"model": model, "messages": [{"role": "user", "content": contents}]}
-                resp = requests.post(url, headers=headers, json=payload, timeout=60)
-                if resp.status_code == 429:
-                    raise Exception("429 RESOURCE_EXHAUSTED")
-                resp.raise_for_status()
-                return resp.json()['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            logger.warning("AI provider %s attempt %d failed: %s", provider, i + 1, e)
-            if "429" in str(e) and log_func:
-                log_func(f"[!] Quota Habis. Menunggu {retry_delay}s...")
-                time.sleep(retry_delay)
-                retry_delay += 15
-            else:
-                raise e
-    raise Exception(f"Gagal menghubungi {provider}.")
+    missing = ai_required_fields_present(config, provider)
+    if missing:
+        raise AIError(missing, provider=provider)
+    return call_with_retry(
+        lambda: _generate_once(config, contents, provider),
+        attempts=AI_MAX_ATTEMPTS,
+        provider=provider,
+        log_func=log_func,
+    )
 
 def ensure_bgm(mood, log_func, config=None):
     """Cari file BGM untuk mood. Hanya menulis ke DATA_DIR (bukan folder aplikasi).
@@ -730,24 +783,106 @@ def fetch_pexels_broll(keyword, pexels_api_key, output_dir):
         pass
 
 def extract_keywords_from_transcript(all_words, config, log_func):
+    """Ekstrak kata kunci visual untuk B-roll, dengan budget request terbatas.
+
+    Versi lama memanggil AI sekali per 5 detik transkrip. Untuk klip 75 detik
+    itu ~15 request, dan untuk video 20 menit lebih dari 240 request — free tier
+    langsung kena rate limit, dan keyword B-roll gagal diam-diam karena
+    error-nya ditelan `except: pass`.
+
+    Sekarang: satu request untuk seluruh transkrip, hasilnya dipetakan ke
+    potongan waktu terdekat. Keyword hilang karena video sepi kata kunci
+    sekarang muncul sebagai pesan di log, bukan error yang hilang tanpa jejak.
+    """
     if not all_words:
         return []
-    res = []
+
     max_time = all_words[-1]["end"]
-    for t in range(0, int(max_time), 5):
-        chunk_words = [w["text"] for w in all_words if t <= w["start"] < t + 5]
-        if not chunk_words:
-            continue
-        words_str = " ".join(chunk_words)
-        prompt = f"Dari kata-kata ini: '{words_str}', ekstrak 1 kata kunci visual paling konkret (benda/organ/tempat/orang terkenal). Jawab 1 kata saja dalam bahasa Inggris."
-        try:
-            keyword = safe_generate_content(config, prompt, log_func=None).strip()
-            keyword = "".join(c for c in keyword if c.isalnum() or c == ' ').split()[0]
-            if keyword and len(keyword) > 2:
-                res.append((t, keyword))
-        except Exception:
-            pass
+    sample = _sample_transcript(all_words, KEYWORD_SAMPLE_CHARS)
+    if not sample:
+        return []
+
+    prompt = (
+        "Dari transkrip video berikut, ekstrak kata kunci visual yang bisa dicari "
+        "di stock footage (benda, tempat, orang terkenal, alat, makanan). "
+        "Balas HANYA JSON array of string, maksimal 15 item, tanpa penjelasan.\n\n"
+        f"Transkrip:\n{sample}"
+    )
+    try:
+        raw = safe_generate_content(config, prompt, log_func=log_func)
+    except AIError as e:
+        logger.warning("Gagal ambil keyword B-roll: %s", e)
+        if log_func:
+            log_func(f"[!] Keyword B-roll dilewati ({e}). Video tetap dirender tanpa B-roll.")
+        return []
+
+    keywords = _parse_keyword_list(raw)
+    if not keywords:
+        if log_func:
+            log_func("[!] AI tidak mengembalikan keyword B-roll. Lanjut tanpa B-roll.")
+        return []
+
+    if log_func:
+        log_func(f"[🎬] {len(keywords)} keyword B-roll dari 1 request AI (bukan {len(keywords)} request).")
+
+    # Satu keyword untuk satu titik waktu, disebar merata di sepanjang transkrip.
+    step = max(1.0, max_time / max(1, len(keywords)))
+    res = []
+    for i, keyword in enumerate(keywords):
+        res.append((round(i * step, 2), keyword))
     return res
+
+
+def _sample_transcript(all_words, limit_chars):
+    """Ambil cuplikan transkrip yang tetap terbaca tapi tidak melebihi batas.
+
+    Mengambil kata dari depan saja akan bias ke topik pembuka, jadi diambil
+    merata di sepanjang transkrip.
+    """
+    words = [w["text"] for w in all_words if w.get("text")]
+    if not words:
+        return ""
+    per_chunk = max(20, limit_chars // 12)
+    chunks = max(1, (len(words) + per_chunk - 1) // per_chunk)
+    out = []
+    for i in range(chunks):
+        start = i * per_chunk
+        piece = " ".join(words[start:start + per_chunk])
+        if piece:
+            out.append(f"...{piece}")
+    text = " ".join(out)
+    return text[:limit_chars]
+
+
+def _parse_keyword_list(raw):
+    """Ambil list keyword dari balasan AI, dengan fallback ke baris per item."""
+    from clipper_ai import extract_json
+
+    data = extract_json(raw)
+    if isinstance(data, list):
+        items = [str(x).strip() for x in data]
+    elif isinstance(data, dict):
+        items = [str(v).strip() for v in data.values()]
+    else:
+        items = []
+
+    if not items:
+        # Model kadang membalas "1. kata\n2. kata" alih-alih JSON.
+        items = []
+        for line in (raw or "").splitlines():
+            cleaned = re.sub(r"^\s*[\d\-\*\.\)]+\s*", "", line).strip()
+            if cleaned and not cleaned.endswith(":"):
+                items.append(cleaned)
+
+    out = []
+    for item in items:
+        # Satu keyword saja: ambil kata pertama yang masuk akal.
+        for word in re.split(r"[\s,;]+", item):
+            word = word.strip(" .\"'`[]")
+            if len(word) > 2 and word.isalpha():
+                out.append(word)
+                break
+    return out[:15]
 
 def time_str_to_seconds(t):
     try:
@@ -802,15 +937,42 @@ def detect_emphasis_words(all_words):
     return emphasis_indices
 
 def detect_whisper_device():
+    """Pilih device untuk faster-whisper: 'cuda' atau 'cpu'.
+
+    Versi lama mengimpor torch hanya untuk memanggil `torch.cuda.is_available()`.
+    faster-whisper TIDAK memakai torch sama sekali — dia pakai ctranslate2. Jadi
+    pada instalasi yang punya torch tapi tidak punya ctranslate2 GPU, atau yang
+    salah pasang, deteksi ini memberi jawaban yang tidak berlaku.
+
+    Sekarang: tanya ctranslate2 langsung, dengan fallback torch untuk instalasi
+    lama yang mungkin masih punya keduanya.
+    """
+    try:
+        import ctranslate2
+        count = ctranslate2.get_cuda_device_count()
+        if count > 0:
+            name = "CUDA"
+            try:
+                name = ctranslate2.get_supported_compute_types("cuda")[0].name
+            except Exception:  # noqa: BLE001 — nama perangkat hanya kosmetik
+                pass
+            logger.info("GPU terdeteksi (%s) — memakai CUDA untuk Whisper", name)
+            return "cuda", "float16"
+    except ImportError:
+        logger.debug("ctranslate2 tidak ada — cek torch untuk deteksi GPU")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Deteksi GPU via ctranslate2 gagal: %s", e)
+
     try:
         import torch
         if torch.cuda.is_available():
-            logger.info("GPU detected: %s — using CUDA for Whisper", torch.cuda.get_device_name(0))
+            logger.info("GPU terdeteksi (torch) — memakai CUDA untuk Whisper")
             return "cuda", "float16"
     except ImportError:
         pass
-    except Exception as e:
-        logger.debug("GPU detection failed: %s", e)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Deteksi GPU via torch gagal: %s", e)
+
     return "cpu", "int8"
 
 def draw_pro_text(draw, text, pos, font, fill=(255, 255, 0), outline_color=(0, 0, 0), outline_width=12, shadow_offset=(5, 7), shadow_alpha=160):
