@@ -122,3 +122,76 @@ dan NUL.
 injeksi lewat shell tertutup. Tapi ffmpeg punya bahasa filter sendiri, jadi
 perlu lapisan kedua. Menyaring `"` itu ditemukan oleh test, bukan oleh review —
 saya lupa `"` ikut disaring; double quote menutup operand di ffmpeg.
+
+---
+
+## [D006] API key disimpan dengan DPAPI, bukan third-party
+
+**Konteks.** v1.2.0 menulis `gemini_api_key`, `openrouter_api_key`,
+`groq_api_key`, dan `pexels_api_key` apa adanya ke `config.json`. File itu
+pretty-printed, jadi siapa pun yang membuka config bisa menyalin key; ikut
+ter-backup ke cloud/OneDrive; dan pernah ikut ter-commit saat `.gitignore`
+tidak berlaku.
+
+**Keputusan.** Modul baru `clipper_secrets.py`. Di Windows, satu blob terenkripsi
+DPAPI user-scope di `%LOCALAPPDATA%/YTShortClipperPro/secrets.dat`. `config.json`
+tetap ada dan tetap dibaca manusia, tapi tidak lagi memuat rahasia. Migrasi dari
+config lama berjalan sekali: key dipindahkan ke `secrets.dat`, lalu `config.json`
+ditulis ulang tanpa key — jadi user lama tidak kehilangan apa pun.
+
+**Kenapa DPAPI dan bukan `keyring` atau `cryptography`.** DPAPI sudah ada di
+Windows, terikat ke akun user yang sedang login, dan memanggilnya cukup lewat
+`ctypes` — tanpa dependensi baru untuk produk yang harus tetap ringan. `keyring`
+menambahkan backend per-platform tanpa memberi keuntungan nyata di target kita;
+`cryptography` memaksa kita mengelola kunci enkripsi sendiri, yang justru
+menghandlung masalah yang sama lebih buruk (kunciaking perlu disimpan di
+sesuatu).
+
+**Entropi tambahan.** `CryptProtectData` diberi entropi opsional yang hanya app
+ini yang tahu. Tanpa itu, blob user-scope bisa dibuka proses lain milik user
+yang sama — misalnya aplikasi lain yang dikompromi. Kesetimbangan yang
+sengaja diambil: kalau binary-nya dibalik, entropi bocor, tapi DPAPI tetap
+menjaga privasi lintas akun. Untuk Serialize key milik user, itu cukup.
+
+**Fallback di luar Windows.** Tidak ada DPAPI, jadi key disimpan sebagai JSON
+dengan permission 0600 dan modul ini menghasilkan peringatan jujur lewat
+`describe_protection()`. Cukup untuk dev dan CI; first-run wizard (Fase 5)
+WAJIB memberi tahu user bahwa perlindungannya lebih lemah. Target rilis tetap
+Windows, jadi jalur ini tidak menyentuh user rilis.
+
+---
+
+## [D007] Penghapusan secret berarti hapus, bukan "simpan yang kosong"
+
+**Konteks.** `load_config()` versi lama membuang semua string kosong dari config,
+sehingga user tidak pernah bisa mengosongkan field API key — begitu dihapus,
+nilai lama langsung kembali muncul. Ini AUDIT.md G6.
+
+**Keputusan.** `set_secret(field, "")` menghapus field dari blob, dan
+`save_config()` menarik seluruh `SECRET_FIELDS` keluar dari dict sebelum menulis
+JSON. Kalau tidak ada secret yang tersisa, file `secrets.dat` dihapus.
+
+**Alasan.** "Kosong" adalah nilai yang valid untuk preference biasa (tema, path)
+tetapi bukan untuk rahasia. Membedakan keduanya perlu tempat berbeda — yang ini
+memang membuat `config.json` bersih dibaca orang, dan `secrets.dat` tidak pernah
+berisi entri kosong yang membingungkan.
+
+---
+
+## [D008] Redaksi di level logging, bukan di setiap call site
+
+**Konteks.** Key bisa bocor ke log bukan cuma dari kode kita, tapi juga dari
+exception library pihak ketiga (`requests`, `google-genai`) yang kadang menyertakan
+URL berisi key di pesan error.
+
+**Keputusan.** `RedactingFormatter` disisipkan di kedua handler (file dan
+console). `redact()` menyensor nilai yang sudah terdaftar (`register_secret`) dan
+pola key yang dikenali (`AIza…`, `gsk_…`, `sk-or-v1-…`, `sk-…`) untuk menangkap
+key yang belum pernah terdaftar — misalnya yang hanya ada di environment
+variable.
+
+**Alasan.** Menyensor di setiap call site selalu bocor di satu tempat yang lupa.
+Menyensor di level handler menutup semua jalur sekaligus. Pola regex menutup
+key dari env yang tidak pernah melewati `register_secret`. Nilai dengan panjang
+< 8 sengaja tidak didaftarkan: menyensor "a" membuat log tak terbaca tanpa
+menambah keamanan yang berarti.

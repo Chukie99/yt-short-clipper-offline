@@ -2,7 +2,7 @@
 clipper_web.py — Gradio Web UI for YT Short Clipper.
 Designed for Google Colab. Voice Hook disabled (desktop-only feature).
 """
-import os, sys, json, time, re, threading, queue as qmod
+import sys, json, time, re, queue as qmod
 from pathlib import Path
 
 # --- Setup paths for Colab ---
@@ -21,11 +21,10 @@ if "google.colab" in sys.modules:
 
 from clipper_paths import temp_dir
 from clipper_core import (
-    RESOURCE_DIR, TEMP_DIR, OUTPUT_DIR,
-    TEMPLATES, RENDER_PRESETS, DEFAULT_CONFIG, GEMINI_PROMPT, UA,
-    load_config, save_config, check_dependencies, list_available_fonts,
+    TEMPLATES, RENDER_PRESETS, GEMINI_PROMPT, UA,
+    load_config, list_available_fonts,
     get_safe_id, safe_generate_content, process_single_video,
-    time_str_to_seconds, IS_COLAB,
+    time_str_to_seconds,
 )
 
 import gradio as gr

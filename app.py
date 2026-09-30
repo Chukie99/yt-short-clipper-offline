@@ -3,7 +3,7 @@ app.py — Streamlit WebUI for YT Short Clipper.
 Jalankan dari Google Colab dengan Ngrok tunneling, atau lokal.
 Mirip arsitektur MoneyPrinterTurbo.
 """
-import os, sys, json, time, re, subprocess, threading, queue as qmod, signal
+import os, sys, json, time, re, subprocess, threading, queue as qmod
 from pathlib import Path
 
 # --- Colab / Drive setup ---
@@ -23,14 +23,12 @@ REPO_DIR = Path(__file__).parent.absolute()
 if str(REPO_DIR) not in sys.path:
     sys.path.insert(0, str(REPO_DIR))
 
-from clipper_paths import temp_dir
+from clipper_paths import DATA_DIR, temp_dir
 from clipper_core import (
-    RESOURCE_DIR, TEMP_DIR, OUTPUT_DIR,
-    TEMPLATES, RENDER_PRESETS, DEFAULT_CONFIG, GEMINI_PROMPT, UA,
-    load_config, save_config, check_dependencies, list_available_fonts,
+    TEMPLATES, RENDER_PRESETS, GEMINI_PROMPT, UA,
+    load_config, check_dependencies, list_available_fonts,
     get_safe_id, safe_generate_content, process_single_video,
-    download_youtube, time_str_to_seconds, setup_directories,
-    IS_COLAB as _CORE_IS_COLAB, get_ffmpeg_path, get_ytdlp_path,
+    download_youtube, time_str_to_seconds,
 )
 
 import streamlit as st
@@ -248,15 +246,9 @@ def run_analysis(link, settings, collector):
         y_p = get_ytdlp_path()
 
         cookies = []
-        cfg_path = Path(REPO_DIR) / "config.json"
-        if cfg_path.exists():
-            try:
-                with open(cfg_path, encoding="utf-8") as f:
-                    cookies_path = json.load(f).get("cookies_path", "")
-                if cookies_path and Path(cookies_path).exists():
-                    cookies = ["--cookies", str(cookies_path)]
-            except Exception:
-                pass
+        cookies_path = load_config().get("cookies_path", "")
+        if cookies_path and Path(cookies_path).exists():
+            cookies = ["--cookies", str(cookies_path)]
 
         # List-args (shell=False) — shell=True + f-string berisi link dari user
         # adalah command injection (AUDIT.md B1).
@@ -290,19 +282,17 @@ def run_analysis(link, settings, collector):
         if not orig.exists():
             collector.log("[#] Downloading video...")
             try:
-                cookies_file = ""
-                cfg_path = Path(REPO_DIR) / "config.json"
-                if cfg_path.exists():
-                    with open(cfg_path) as f:
-                        cfg_data = json.load(f)
-                        cookies_file = cfg_data.get("cookies_path", "")
-                        collector.log(f"[🔍] Config cookies_path: {cookies_file}")
+                cookies_file = load_config().get("cookies_path", "")
                 if not cookies_file:
-                    default_cookies = Path(REPO_DIR) / "cookies.txt"
+                    default_cookies = DATA_DIR / "cookies.txt"
                     if default_cookies.exists():
                         cookies_file = str(default_cookies)
-                        collector.log(f"[🔍] Using default cookies: {cookies_file}")
-                collector.log(f"[🔍] Final cookies: {cookies_file}")
+                # Jangan pernah tampilkan isi path cookies — cukup nyatakan dipakai
+                # atau tidak (path ini bisa mengandung nama akun).
+                collector.log(
+                    f"[🍪] Cookies: {cookies_file}"
+                    if cookies_file else "[🍪] Cookies: tidak ada (video privat akan gagal)"
+                )
                 download_youtube(link, orig, cookies_file, collector.log)
             except Exception as e:
                 collector.log(f"⚠️ Download error: {str(e)[:200]}")

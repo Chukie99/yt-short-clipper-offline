@@ -3,25 +3,16 @@ clipper_gui_modern.py — Desktop GUI (CustomTkinter) for YT Short Clipper.
 Imports core logic from clipper_core.py.
 """
 import os, sys, subprocess, threading, time, json, re
-from pathlib import Path
 
 from clipper_core import (
     _valid_youtube_url,
-    RESOURCE_DIR, TEMP_DIR, OUTPUT_DIR,
-    TEMPLATES, RENDER_PRESETS, DEFAULT_CONFIG, GEMINI_PROMPT, UA,
+    RESOURCE_DIR, TEMPLATES, GEMINI_PROMPT, UA,
     load_config, save_config, check_dependencies, list_available_fonts,
     get_safe_id, save_queue_state, load_queue_state, clear_queue_state,
     safe_generate_content, download_youtube, process_single_video,
-    voicebox_generate, tts_generate_hook, draw_pro_text, draw_karaoke_line, draw_end_card,
-    apply_vignette, apply_cinematic_grade, render_grid_layout,
-    compute_speech_segments, is_in_speech_segment, detect_emphasis_words,
-    detect_whisper_device, apply_sharpen, get_audio_duration,
-    time_str_to_seconds, run_cmd, ensure_bgm, fetch_pexels_broll,
-    extract_keywords_from_transcript, KalmanFilter, SpeakerTracker, FaceState,
-    QUEUE_STATE_FILE, VOICEBOX_API, IS_COLAB,
-    get_ffmpeg_path, get_ytdlp_path, get_detector_path, setup_directories,
+    tts_generate_hook, time_str_to_seconds, get_ytdlp_path,
 )
-from clipper_paths import temp_dir, resource_file
+from clipper_paths import temp_dir
 
 import customtkinter as ctk
 # --- Pastel palette (v1.0.0 Easy Use) ---
@@ -35,9 +26,7 @@ PASTEL_PEACH = "#FFDAC1"
 PASTEL_MINT = "#C8EDE0"
 PASTEL_LILAC = "#E2D8F5"
 
-from tkinter import messagebox, Menu, filedialog, TclError
-import cv2
-import numpy as np
+from tkinter import messagebox, filedialog
 from PIL import Image as PILImage, ImageDraw, ImageFont
 
 

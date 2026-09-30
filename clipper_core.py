@@ -20,9 +20,13 @@ from clipper_run import (
     run_command, run_streaming, safe_filename, quote_for_filtergraph,
     CommandError,
 )
+from clipper_secrets import (
+    SECRET_FIELDS, get_secret, save_secrets, load_secrets,
+    register_secret, redact,
+)
 
 # .env hanya dibaca di dev (repo). Saat frozen tidak ada .env — API key user
-# disimpan di %APPDATA% lewat config.json, bukan dari environment.
+# disimpan terenkripsi (DPAPI) di %LOCALAPPDATA%, bukan dari environment.
 load_dotenv()
 
 # ---------- Paths (lihat clipper_paths.py + AUDIT.md bagian A) ----------
@@ -53,12 +57,38 @@ LOG_FILE = log_dir() / "clipper.log"
 logger = logging.getLogger("clipper")
 logger.setLevel(logging.DEBUG)
 _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+class RedactingFormatter(logging.Formatter):
+    """Sensor API key dari setiap baris log.
+
+    Berlaku untuk file DAN console, karena kalau bocor ke log berarti bocor ke
+    file yang sering user kirim saat minta bantuan.
+    """
+
+    def format(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 — format gagal = pakai apa adanya
+            return super().format(record)
+        safe = redact(message)
+        if safe != message:
+            record = _clone_with_message(record, safe)
+        return super().format(record)
+
+
+def _clone_with_message(record, message):
+    """Salin LogRecord dengan pesan baru, tanpa menyentuh argumen asli."""
+    clone = logging.makeLogRecord(record.__dict__)
+    clone.msg = message
+    clone.args = ()
+    return clone
+
 _fh = RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
 _fh.setLevel(logging.DEBUG)
-_fh.setFormatter(_fmt)
+_fh.setFormatter(RedactingFormatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
 _sh = logging.StreamHandler()
 _sh.setLevel(logging.WARNING)
-_sh.setFormatter(_fmt)
+_sh.setFormatter(RedactingFormatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
 logger.addHandler(_fh)
 logger.addHandler(_sh)
 if _MIGRATION.get("migrated_from"):
@@ -322,6 +352,65 @@ Analisis seperti content creator yang paham algoritma TikTok/YouTube Shorts. Car
 WAJIB isi semua field. hashtags 10-15 diawali #. seo_tags 8-12 keyword comma-separated. viral_score 7-10.
 Keluarakan HANYA JSON array."""
 
+def _migrate_plaintext_secrets(config):
+    """Pindahkan API key dari config.json lama ke secrets.dat, lalu buang aslinya.
+
+    Config v1/v2 menyimpan key plaintext. Sekali saja saat config dibaca: key
+    disimpan terenkripsi, lalu file config ditulis ulang TANPA key. Jadi user
+    lama tidak kehilangan key, dan file yang tersisa tidak lagi memuat rahasia.
+
+    Aman dipanggil berkali-kali — kalau secrets.dat sudah punya key, nilai lama
+    di config tidak menimpanya (secret yang sudah ada lebih baru).
+    """
+    found = {}
+    for field in SECRET_FIELDS:
+        value = (config.get(field) or "").strip()
+        if value:
+            found[field] = value
+    if not found:
+        return
+
+    stored = load_secrets()
+    added = {k: v for k, v in found.items() if k not in stored}
+    if not added:
+        return
+    save_secrets({**stored, **added})
+    logger.info("API key dipindahkan ke penyimpanan terenkripsi: %s", ", ".join(added))
+    _strip_plaintext_keys_from_file()
+
+
+def _strip_plaintext_keys_from_file():
+    """Tulis ulang config.json tanpa field secret.
+
+    Kegagalan di sini bukan fatal: key sudah aman di secrets.dat, jadi user
+    hanya perlu menghapus baris key manual dari config.json.
+    """
+    cfg_path = config_file()
+    if not cfg_path.exists():
+        return
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            raw = json.loads(f.read() or "{}")
+        if not isinstance(raw, dict):
+            return
+        removed = [k for k in SECRET_FIELDS if k in raw]
+        if not removed:
+            return
+        for key in removed:
+            raw.pop(key, None)
+        tmp = cfg_path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(raw, f, indent=2, ensure_ascii=False)
+        tmp.replace(cfg_path)
+        logger.info("Key plaintext dihapus dari config.json")
+    except Exception as e:  # noqa: BLE001 — migrasi tidak boleh boot jadi gagal
+        logger.warning(
+            "Gagal membersihkan key plaintext dari config.json (%s). "
+            "Hapus manual baris API key dari file tersebut.",
+            type(e).__name__,
+        )
+
+
 def load_config():
     config = DEFAULT_CONFIG.copy()
     cfg_path = config_file()
@@ -342,18 +431,37 @@ def load_config():
     if int(config.get("config_schema_version", 1) or 1) < 2:
         config = adopt_legacy_output_dir(config)
         config["config_schema_version"] = 2
-    if not (config.get("gemini_api_key") or "").strip():
-        config["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
-    if not (config.get("openrouter_api_key") or "").strip():
-        config["openrouter_api_key"] = os.environ.get("OPENROUTER_API_KEY", "")
-    if not (config.get("groq_api_key") or "").strip():
-        config["groq_api_key"] = os.environ.get("GROQ_API_KEY", "")
+
+    # Key tidak lagi dibaca dari config.json. Kalau config lama masih memuatnya,
+    # pindahkan ke secrets.dat sekali ini lalu buang dari config (v2 -> v3).
+    _migrate_plaintext_secrets(config)
+
+    for field in SECRET_FIELDS:
+        config[field] = get_secret(field)
+        # Daftarkan supaya key ini disensor kalau muncul di pesan error AI/HTTP.
+        register_secret(config[field])
     return config
 
 def save_config(config):
-    """Tulis config ke DATA_DIR. Atomic: tulis .tmp dulu lalu replace."""
+    """Tulis config ke DATA_DIR. Atomic: tulis .tmp dulu lalu replace.
+
+    API key DITARIK dari dict ini dan disimpan lewat clipper_secrets (DPAPI),
+    jadi config.json tidak pernah memuat rahasia dalam plaintext.
+    """
     ensure_dirs()
     cfg = dict(config)
+
+    # Pisahkan secret sebelum menulis. Nilai di config di-register dulu supaya
+    # bisa disensor di log, lalu disimpan terenkripsi.
+    secrets = {}
+    for field in SECRET_FIELDS:
+        if field in cfg:
+            value = cfg.pop(field) or ""
+            if value:
+                secrets[field] = value
+    if secrets:
+        save_secrets(secrets)
+
     cfg["config_schema_version"] = CONFIG_SCHEMA_VERSION
     cfg_path = config_file()
     tmp = cfg_path.with_suffix(".tmp")
