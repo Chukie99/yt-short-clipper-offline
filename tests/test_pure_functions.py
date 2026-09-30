@@ -17,13 +17,11 @@ without touching any real video / network / GPU code.
 """
 import os
 import sys
-import math
 import types
 
 # ---------------------------------------------------------------------------
 # Mock heavy dependencies *before* importing clipper_core
 # ---------------------------------------------------------------------------
-import numpy as np  # numpy is fine to import for real — we only stub cv2/mp
 
 # cv2 stub — we need a few constants and the functions used by pure helpers
 class _Cv2Stub:

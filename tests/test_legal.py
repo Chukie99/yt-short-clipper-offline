@@ -22,8 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from clipper_legal import (  # noqa: E402
     APP_LICENSE, BUNDLED_ASSETS, BLOCKED_ASSETS, EXTERNAL_ASSETS,
-    FALLBACK_FONTS, SUBTITLE_FONT_DEFAULT, audit_installed_fonts,
-    bundled_summary, legal_summary_for_ui, redistribution_allowed,
+    FALLBACK_FONTS, SUBTITLE_FONT_DEFAULT, bundled_summary, legal_summary_for_ui, redistribution_allowed,
 )
 from clipper_version import (  # noqa: E402
     APP_VERSION, EOL_PYTHON, MAX_TESTED_PYTHON, MIN_PYTHON, check_python,

@@ -12,7 +12,6 @@ tetapi properti yang benar-benar penting untuk produk yang dijual:
 Test memakai CLIPPER_DATA_DIR di temp supaya tidak pernah menyentuh
 %LOCALAPPDATA% milik user sungguhan.
 """
-import os
 import sys
 from pathlib import Path
 

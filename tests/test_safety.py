@@ -9,7 +9,6 @@ Most tests here use real subprocesses (python -c) rather than mocks — a mock c
 prove that shell metacharacters in an argument do not execute.
 """
 import json
-import os
 import subprocess
 import sys
 import tempfile
