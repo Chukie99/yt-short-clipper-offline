@@ -14,6 +14,10 @@ from clipper_core import (
 )
 from clipper_legal import SUBTITLE_FONT_DEFAULT, legal_summary_for_ui
 from clipper_version import APP_VERSION, python_support_text
+from clipper_guard import gate_before_work, format_gate_dialog
+from clipper_firstrun import (
+    has_blockers, run_all_checks, summary_for_startup, check_output_dir,
+)
 from clipper_paths import temp_dir
 from clipper_ai import build_prompt
 
@@ -56,6 +60,18 @@ class SettingsDialog(ctk.CTkToplevel):
         self.wm_var = ctk.StringVar(value=config.get("whisper_model", "openai/whisper-1"))
         ctk.CTkEntry(self, textvariable=self.wm_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=5, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Cookies:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.c_var = ctk.StringVar(value=config.get("cookies_path", "")); f_c = ctk.CTkFrame(self, fg_color="transparent"); f_c.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_c.grid_columnconfigure(0, weight=1); ctk.CTkEntry(f_c, textvariable=self.c_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew"); ctk.CTkButton(f_c, text="📁", width=50, command=self.browse_cookies, fg_color="#F0DDD2", corner_radius=8).grid(row=0, column=1); r += 1
+        # Folder output. Ditambahkan di fase 6 karena check_firstrun memberi
+        # saran "ganti folder output di Settings" — tapi field-nya tidak pernah
+        # ada, jadi sarannya tidak bisa diikuti. Saran tanpa aksi adalah jebakan.
+        from clipper_paths import default_output_dir
+        ctk.CTkLabel(self, text="Folder Output:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w")
+        self.od_var = ctk.StringVar(value=config.get("output_dir", "") or str(default_output_dir()))
+        f_o = ctk.CTkFrame(self, fg_color="transparent"); f_o.grid(row=r, column=1, padx=20, pady=10, sticky="ew"); f_o.grid_columnconfigure(0, weight=1)
+        ctk.CTkEntry(f_o, textvariable=self.od_var, corner_radius=8).grid(row=0, column=0, padx=(0,5), sticky="ew")
+        ctk.CTkButton(f_o, text="📁", width=50, command=self.browse_output, fg_color="#F0DDD2", corner_radius=8).grid(row=0, column=1)
+        r += 1
+        ctk.CTkLabel(self, text="", text_color="#8D99AE", font=("Arial", 11)).grid(row=r, column=0, padx=20, sticky="w")
+        self.od_status = ctk.CTkLabel(self, text="", text_color="#8D99AE", font=("Arial", 11), anchor="w"); self.od_status.grid(row=r, column=1, padx=20, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Watermark:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.w_var = ctk.StringVar(value=config.get("watermark", "")); ctk.CTkEntry(self, textvariable=self.w_var, width=300, corner_radius=8).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="Pexels API Key:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.pk_var = ctk.StringVar(value=config.get("pexels_api_key", "")); ctk.CTkEntry(self, textvariable=self.pk_var, width=300, corner_radius=8, show="*").grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
         ctk.CTkLabel(self, text="BGM Volume:", font=("Arial", 13), text_color="#2B2D42").grid(row=r, column=0, padx=20, pady=10, sticky="w"); self.bv_var = ctk.DoubleVar(value=config.get("bgm_volume", 0.15)); ctk.CTkSlider(self, from_=0, to=1, variable=self.bv_var, width=300).grid(row=r, column=1, padx=20, pady=10, sticky="ew"); r += 1
@@ -138,6 +154,28 @@ class SettingsDialog(ctk.CTkToplevel):
             preview.show()
         except Exception as e:
             messagebox.showerror("Preview Error", str(e))
+    def browse_output(self):
+        p = filedialog.askdirectory(title="Pilih folder untuk hasil video")
+        if p:
+            self.od_var.set(p)
+            self._check_output_writable()
+    def _check_output_writable(self):
+        """Cek folder output bisa ditulis, dan tampilkan hasilnya seketika.
+
+        Menolak folder yang tidak bisa ditulis saat user memilihnya jauh lebih
+        baik daripada membiarkan render gagal 10 menit kemudian. Pesannya juga
+        menjelaskan Known Folder Windows, karena errornya (WinError 2) menyiratkan
+        folder hilang padahal tidak.
+        """
+        raw = self.od_var.get().strip()
+        if not raw:
+            return
+        issues = check_output_dir({"output_dir": raw})
+        if not issues:
+            self.od_status.configure(text=f"OK - {raw}", text_color="#2B2D42")
+            return
+        issue = issues[0]
+        self.od_status.configure(text=f"{issue.title} - {issue.fix_hint}", text_color="#C1121F")
     def test_api(self):
         import threading
         def _t():
@@ -149,7 +187,7 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("Test API", f"❌ Gagal: {e}")
         threading.Thread(target=_t, daemon=True).start()
     def save(self):
-        nc = {"ai_provider": self.p_var.get(), "gemini_api_key": self.gk_var.get().strip(), "gemini_model": self.gm_var.get(), "openrouter_api_key": self.ok_var.get().strip(), "openrouter_model": self.om_var.get().strip(), "groq_api_key": self.grk_var.get().strip(), "groq_model": self.grm_var.get().strip(), "pexels_api_key": self.pk_var.get().strip(), "cookies_path": self.c_var.get().strip(), "watermark": self.w_var.get().strip(), "subtitle_font": self.f_var.get(), "logo_path": self.l_var.get().strip(), "bgm_volume": self.bv_var.get(), "render_quality": self.rq_var.get(), "template": self.tpl_var.get(), "export_resolution": self.er_var.get(), "end_card": self.ec_var.get(), "end_card_text": self.ec_text_var.get().strip(), "whisper_provider": self.wp_var.get(), "whisper_model": self.wm_var.get().strip(), "silence_threshold": self.st_var.get(), "tts_provider": self.tts_var.get(), "tts_edge_voice": self.edge_var.get(), "tts_reference_path": self.ref_var.get().strip(), "opticlone_steps": int(self.steps_var.get() or 4), "opticlone_speed": float(self.speed_var.get() or 1.0)}
+        nc = {"ai_provider": self.p_var.get(), "gemini_api_key": self.gk_var.get().strip(), "gemini_model": self.gm_var.get(), "openrouter_api_key": self.ok_var.get().strip(), "openrouter_model": self.om_var.get().strip(), "groq_api_key": self.grk_var.get().strip(), "groq_model": self.grm_var.get().strip(), "pexels_api_key": self.pk_var.get().strip(), "cookies_path": self.c_var.get().strip(), "output_dir": self.od_var.get().strip(), "watermark": self.w_var.get().strip(), "subtitle_font": self.f_var.get(), "logo_path": self.l_var.get().strip(), "bgm_volume": self.bv_var.get(), "render_quality": self.rq_var.get(), "template": self.tpl_var.get(), "export_resolution": self.er_var.get(), "end_card": self.ec_var.get(), "end_card_text": self.ec_text_var.get().strip(), "whisper_provider": self.wp_var.get(), "whisper_model": self.wm_var.get().strip(), "silence_threshold": self.st_var.get(), "tts_provider": self.tts_var.get(), "tts_edge_voice": self.edge_var.get(), "tts_reference_path": self.ref_var.get().strip(), "opticlone_steps": int(self.steps_var.get() or 4), "opticlone_speed": float(self.speed_var.get() or 1.0)}
         self.on_save(nc); self.destroy()
 
 class VideoItem(ctk.CTkFrame):
@@ -320,8 +358,13 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__(); self.title(f"YT Short Clipper v{APP_VERSION}"); self.geometry("1100x850"); 
         ctk.set_appearance_mode("light"); ctk.set_default_color_theme("blue")
-        de = check_dependencies(); self.dependency_failed = len(de) > 0
         self.config = load_config(); self.v_items = []; self.proc = False; self.proc_lock = threading.Lock()
+        # Laporan kesiapan dibuat setelah config dimuat (butuh output_dir), dan
+        # ditampilkan lewat after() supaya window sudah selesai digambar.
+        # Sebelumnya hasil check_dependencies() langsung dibuang di sini.
+        self.dependency_errors = check_dependencies()
+        self.dependency_failed = len(self.dependency_errors) > 0
+        self.after(500, self.show_startup_report)
         self.grid_columnconfigure(0, weight=1); [self.grid_rowconfigure(i, weight=0) for i in range(6)]; self.grid_rowconfigure(6, weight=1)
         m = ctk.CTkFrame(self, height=40, fg_color="#FFF7F0", corner_radius=0); m.grid(row=0, column=0, sticky="ew"); m.grid_columnconfigure(0, weight=1)
         ctk.CTkButton(m, text="⚙️ Settings", command=self.open_settings, fg_color="transparent", hover_color="#F0DDD2").pack(side="left", padx=10, pady=5)
@@ -372,6 +415,30 @@ class App(ctk.CTk):
         except Exception:
             _do()
     def flush(self): pass
+    def show_startup_report(self):
+        """Laporan kesiapan saat aplikasi dibuka.
+
+        Sebelumnya `check_dependencies()` dipanggil sekali di __init__ lalu
+        hasilnya dibuang — tidak pernah ditampilkan dan tidak pernah dipakai
+        untuk memblokir apa pun. Check yang tidak dibaca samanilainya dengan
+        check yang tidak ada, tapi kelihatan seolah-olah sudah aman.
+        """
+        issues = run_all_checks(self.config)
+        if not issues:
+            return
+        message = summary_for_startup(issues)
+        if has_blockers(issues):
+            self.log("[!] Aplikasi belum siap dipakai:")
+            for line in message.split("\n"):
+                self.log("    " + line)
+            self.after(400, lambda: messagebox.showwarning(
+                "Belum siap dipakai", message
+            ))
+        else:
+            self.log(message)
+            for w in issues:
+                self.log(f"    {w.title}: {w.fix_hint}")
+
     def show_about(self):
         """Dialog About: versi, runtime, dan status lisensi aset.
 
@@ -520,6 +587,18 @@ class App(ctk.CTk):
         if not al:
             self.log("[!] Tidak ada segmen dipilih.")
             return
+        # Gerbang render: cek kesiapan SEBELUM antrean jalan. Tanpa ini user
+        # baru menunggu model terunduh, lalu baru tahu ffmpeg/output tidak bisa
+        # dipakai (lihat clipper_guard.py).
+        gate = gate_before_work(self.config, need_render=True)
+        if not gate.can_proceed:
+            self.log("[!] Tidak bisa mulai render:")
+            for line in format_gate_dialog(gate).split("\n"):
+                self.log("    " + line)
+            messagebox.showwarning("Belum bisa render", format_gate_dialog(gate))
+            return
+        for w in gate.warnings:
+            self.log(f"[!] {w.title}: {w.fix_hint}")
         save_queue_state(al, self.config)
         with self.proc_lock:
             if self.proc:

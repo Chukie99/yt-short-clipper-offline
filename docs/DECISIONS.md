@@ -469,3 +469,64 @@ benar. Test struktural menutup kelas bug ini, bukan hanya satu kasusnya.
 setelah `clipper_version.py` dibuat: judul window, badge Streamlit, footer
 Gradio, dan pesan build. Sekarang semuanya membaca dari satu modul, dan ada
 test yang gagal kalau angka keras muncul lagi di teks yang tampil ke user.
+
+---
+
+## [D019] Saran tanpa aksi adalah jebakan: setiap pesan harus punya jalan keluar
+
+**Konteks.** Fase 5 menemukan output default (`~/Videos`) tidak bisa ditulis
+di sebagian PC Windows. `check_output_dir()` mendeteksi itu dan memberi saran:
+"Ganti folder output di Settings".
+
+**Masalah yang baru ketahuan di fase 6.** Field `output_dir` **tidak pernah ada**
+di dialog Settings. Satu-satunya tempat `output_dir` muncul di GUI adalah
+`clipper_web.py` untuk Colab. Jadi pesan itu mengarahkan user ke tempat yang tidak
+ada isinya - dan user akan menyimpulkan aplikasinya rusak, bukan bahwa sarannya
+salah.
+
+**Keputusan.** Field `Folder Output:` ditambahkan ke Settings, lengkap dengan
+tombol picker dan validasi langsung saat folder dipilih. Ada test yang menjaga
+dua sisi: field-nya ada, dan pesan errornya menunjuk ke field yang benar.
+
+**Kenapa validasi saat dipilih, bukan hanya saat save.** Menolak folder yang
+tidak bisa ditulis di dialog jauh lebih murah daripada membiarkan render gagal
+sepuluh menit kemudian, setelah model terunduh.
+
+**Aturan yang lahir dari sini.** Setiap pesan yang mengarahkan user ke tempat
+tertentu harus punya test yang memeriksa tempat itu benar-benar ada. Prompt yang
+menunjuk ke menu yang tidak ada, atau ke command yang tidak ada, lebih buruk dari
+tidak ada pesan sama sekali - karena user akan mengejar directions yang salah
+dan berhenti percaya.
+
+---
+
+## [D020] Check yang tidak dibaca tetap dead code
+
+**Konteks.** `check_dependencies()` dipanggil di `__init__` GUI, hasilnya
+disimpan ke `self.dependency_failed`, dan **tidak pernah dibaca lagi** di mana pun
+(verified: satu kemunculan di seluruh repo). Jadi aplikasi menjalankan pemeriksaan
+kemampuan lengkap, membuang hasilnya, lalu membiarkan user menekan tombol yang
+tidak akan pernah berhasil.
+
+**Keputusan.** Dua lapis:
+
+1. `clipper_guard.gate_before_work()` dipanggil di `start_processing()` SEBELUM
+   antrean disimpan dan sebelum thread render jalan. Blocker menghentikan
+   pekerjaan dengan pesan yang bisa ditindaklanjuti; warning cuma masuk log.
+2. `show_startup_report()` dipanggil lewat `after(500, ...)` supaya user
+   tahu kondisinya sebelum menekan apa pun.
+
+**Kenapa modul terpisah (`clipper_guard`) dan bukan method di GUI.** Aturannya
+berlaku di GUI, Streamlit, dan Gradio. Aturan yang hanya ada di UI bisa dilewati
+diam-diam oleh jalur lain, dan test tidak bisa memanggilnya tanpa menjalankan
+Tkinter.
+
+**Kenapa analisis dan render dipisahkan.** `need_ai` dan `need_render`
+independen. Menolak analisis karena ffmpeg tidak ada akan membingungkan - masalahnya
+tidak terkait, dan analisis tetap berguna tanpa ffmpeg. Menolak render karena
+API key kosong juga berlebihan: render tetap jalan, hanya tanpa analisis.
+
+**Pelajaran untuk test.** Ada test yang memeriksa `show_startup_report` benar-
+benar dipanggil, bukan hanya method-nya ada. Keberadaan fungsi bukan bukti
+pemakaian - dan itu persis bentuk bug yang sudah terjadi di repo ini dua kali: nilai yang benar di titik yang tidak dipakai, dan check yang dijalankan lalu
+dibuang.
