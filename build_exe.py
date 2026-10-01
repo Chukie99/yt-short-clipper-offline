@@ -131,6 +131,14 @@ def build_command() -> list:
     args += collect_data_args()
     args += collect_hidden_imports()
     args += collect_excludes()
+    # Fase 7: exclude torch (GPU detect bukan kebutuhan hard, cuma fallback
+    # di belakang ctranslate2; torch nggak ada di requirements.txt) +
+    # imageio_ffmpeg (duplikat; aplikasi pakai ffmpeg dari PATH)
+    args.extend([
+        "--exclude-module=torch",
+        "--exclude-module=torchvision",
+        "--exclude-module=imageio_ffmpeg",
+    ])
 
     for lib in ("customtkinter", "faster_whisper", "PIL", "google.genai"):
         args.append(f"--collect-all={lib}")
